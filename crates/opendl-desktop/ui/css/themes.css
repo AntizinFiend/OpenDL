@@ -1,0 +1,154 @@
+:root,
+[data-theme="dark"] {
+  --page: #0D0D0C;
+  --sidebar: #121210;
+  --sidebar-bg: rgba(18, 18, 16, 0.88);
+  --titlebar: #121210;
+  --titlebar-bg: rgba(18, 18, 16, 0.86);
+  --surface: #161614;
+  --surface-raised: #1C1C19;
+  --text: #EDEAE4;
+  --text-secondary: #8C877E;
+  --border: #282724;
+  --track: #201F1C;
+  --accent: #F59E0B;
+  --accent-ink: #120D04;
+  --accent-border: #D97706;
+  --accent-text: #F59E0B;
+  --accent-faint: rgba(245, 158, 11, 0.08);
+  --accent-fill-graph: rgba(245, 158, 11, 0.14);
+  --finished: #22C55E;
+  --failed: #EF4444;
+  --paused: #F59E0B;
+  --grid-opacity: 0.04;
+  --hatch-stroke: rgba(237, 234, 228, 0.07);
+}
+
+[data-theme="light"] {
+  --page: #F4F5F7;
+  --sidebar: #EAECEF;
+  --sidebar-bg: rgba(234, 236, 239, 0.88);
+  --titlebar: #EAECEF;
+  --titlebar-bg: rgba(234, 236, 239, 0.86);
+  --surface: #FFFFFF;
+  --surface-raised: #F8F9FA;
+  --text: #111317;
+  --text-secondary: #5C626E;
+  --border: #D5D9E0;
+  --track: #E2E5EC;
+  --accent: #181B20;
+  --accent-ink: #FFFFFF;
+  --accent-border: #181B20;
+  --accent-text: #181B20;
+  --accent-faint: rgba(24, 27, 32, 0.06);
+  --accent-fill-graph: rgba(24, 27, 32, 0.12);
+  --finished: #15803D;
+  --failed: #DC2626;
+  --paused: #4B5563;
+  --grid-opacity: 0.04;
+  --hatch-stroke: rgba(17, 19, 23, 0.08);
+}
+
+[data-theme="amber-day"] {
+  --page: #F5F3EE;
+  --sidebar: #EDEAE3;
+  --sidebar-bg: rgba(237, 234, 227, 0.88);
+  --titlebar: #EDEAE3;
+  --titlebar-bg: rgba(237, 234, 227, 0.86);
+  --surface: #FFFFFF;
+  --surface-raised: #FAF8F5;
+  --text: #1A1408;
+  --text-secondary: #6B6355;
+  --border: #DDD8CC;
+  --track: #E6E1D5;
+  --accent: #F5A400;
+  --accent-ink: #1A1408;
+  --accent-border: #B87400;
+  --accent-text: #A85A00;
+  --accent-faint: rgba(245, 164, 0, 0.10);
+  --accent-fill-graph: rgba(168, 90, 0, 0.14);
+  --finished: #1F7A4D;
+  --failed: #C2352B;
+  --paused: #A85A00;
+  --grid-opacity: 0.04;
+  --hatch-stroke: rgba(26, 20, 8, 0.08);
+}
+
+[data-theme="blueprint"] {
+  --page: #0B1624;
+  --sidebar: #0D1A2A;
+  --sidebar-bg: rgba(13, 26, 42, 0.88);
+  --titlebar: #0D1A2A;
+  --titlebar-bg: rgba(13, 26, 42, 0.86);
+  --surface: #0F1E30;
+  --surface-raised: #13263C;
+  --text: #D6E4F5;
+  --text-secondary: #7F97B3;
+  --border: #1F3550;
+  --track: #16283D;
+  --accent: #4FB8F0;
+  --accent-ink: #06121F;
+  --accent-border: #4FB8F0;
+  --accent-text: #4FB8F0;
+  --accent-faint: rgba(79, 184, 240, 0.10);
+  --accent-fill-graph: rgba(79, 184, 240, 0.16);
+  --finished: #4CC38A;
+  --failed: #FF6B5E;
+  --paused: #E0A33A;
+  --grid-opacity: 0.08;
+  --hatch-stroke: rgba(214, 228, 245, 0.09);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] {
+    --page: #F4F5F7;
+    --sidebar: #EAECEF;
+    --sidebar-bg: rgba(234, 236, 239, 0.88);
+    --titlebar: #EAECEF;
+    --titlebar-bg: rgba(234, 236, 239, 0.86);
+    --surface: #FFFFFF;
+    --surface-raised: #F8F9FA;
+    --text: #111317;
+    --text-secondary: #5C626E;
+    --border: #D5D9E0;
+    --track: #E2E5EC;
+    --accent: #181B20;
+    --accent-ink: #FFFFFF;
+    --accent-border: #181B20;
+    --accent-text: #181B20;
+    --accent-faint: rgba(24, 27, 32, 0.06);
+    --accent-fill-graph: rgba(24, 27, 32, 0.12);
+    --finished: #15803D;
+    --failed: #DC2626;
+    --paused: #4B5563;
+    --grid-opacity: 0.04;
+    --hatch-stroke: rgba(17, 19, 23, 0.08);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] {
+    --page: #0D0D0C;
+    --sidebar: #121210;
+    --sidebar-bg: rgba(18, 18, 16, 0.88);
+    --titlebar: #121210;
+    --titlebar-bg: rgba(18, 18, 16, 0.86);
+    --surface: #161614;
+    --surface-raised: #1C1C19;
+    --text: #EDEAE4;
+    --text-secondary: #8C877E;
+    --border: #282724;
+    --track: #201F1C;
+    --accent: #F59E0B;
+    --accent-ink: #120D04;
+    --accent-border: #D97706;
+    --accent-text: #F59E0B;
+    --accent-faint: rgba(245, 158, 11, 0.08);
+    --accent-fill-graph: rgba(245, 158, 11, 0.14);
+    --finished: #22C55E;
+    --failed: #EF4444;
+    --paused: #F59E0B;
+    --grid-opacity: 0.04;
+    --hatch-stroke: rgba(237, 234, 228, 0.07);
+  }
+}

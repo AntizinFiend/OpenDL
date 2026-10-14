@@ -1,0 +1,21 @@
+[package]
+name = "opendl-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", default-features = false }
+
+[dependencies]
+tauri = { version = "2", default-features = false, features = ["wry"] }
+opendl-core = { path = "../opendl-core" }
+opendl-engine = { path = "../opendl-engine" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+parking_lot.workspace = true

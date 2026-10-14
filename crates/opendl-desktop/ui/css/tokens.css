@@ -1,0 +1,33 @@
+:root {
+  --font-display: "Bahnschrift", "DIN Alternate", "Franklin Gothic Medium", "Segoe UI Semibold", sans-serif;
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", "JetBrains Mono", monospace;
+
+  --fs-display-lg: 22px;
+  --fs-display: 20px;
+  --fs-ui: 13px;
+  --fs-mono: 12px;
+  --fs-micro: 11px;
+
+  --radius-none: 0px;
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  --titlebar-height: 40px;
+  --sidebar-width: 232px;
+  --sidebar-rail-width: 56px;
+  --row-height: 46px;
+  --statusbar-height: 28px;
+
+  --dur-fast: 150ms;
+  --dur-med: 200ms;
+  --dur-slow: 250ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}

@@ -1,0 +1,69 @@
+/**
+ * OpenDL - Animations & Motion Layer
+ * Clean, restrained transitions. No glow, no glitch, no neon.
+ * Respects prefers-reduced-motion.
+ */
+
+@layer animations {
+  /* Subtle modal scale & fade */
+  .modal-backdrop.active .modal-dialog {
+    animation: modalIn 180ms ease-out;
+  }
+
+  @keyframes modalIn {
+    from {
+      opacity: 0;
+      transform: scale(0.98) translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  /* Task row enter & status transitions */
+  .task-row {
+    animation: rowEnter 150ms ease-out;
+  }
+
+  @keyframes rowEnter {
+    from {
+      opacity: 0;
+      transform: translateY(2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  @keyframes radar-pulse {
+    0% {
+      transform: scale(0.95);
+      box-shadow: 0 0 0 0 rgba(255, 79, 31, 0.7);
+    }
+    70% {
+      transform: scale(1);
+      box-shadow: 0 0 0 4px rgba(255, 79, 31, 0);
+    }
+    100% {
+      transform: scale(0.95);
+      box-shadow: 0 0 0 0 rgba(255, 79, 31, 0);
+    }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-2px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Accessibility: disable motion when requested */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenDL // Telemetry Download Manager</title>
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/themes.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+<body>
+  <div id="app-shell" class="app-shell">
+    <header id="titlebar" class="titlebar" data-tauri-drag-region>
+      <div class="titlebar-brand" data-tauri-drag-region>
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-wordmark" data-tauri-drag-region>OPENDL</span>
+        <span class="brand-version" data-tauri-drag-region>REV 2.4 // TELEMETRY</span>
+      </div>
+
+      <div class="titlebar-search-wrap">
+        <label for="global-search" class="sr-only">Search downloads</label>
+        <span class="search-icon" data-icon="search" aria-hidden="true"></span>
+        <input
+          id="global-search"
+          class="titlebar-search block-caret"
+          type="text"
+          placeholder="FILTER TASKS BY NAME, URL, OR CATEGORY..."
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <kbd class="keycap">CTRL+F</kbd>
+      </div>
+
+      <div class="titlebar-actions">
+        <button id="btn-palette" class="icon-btn" type="button" data-tooltip="Command Palette (Ctrl+K)" aria-label="Command Palette">
+          <span data-icon="terminal"></span>
+        </button>
+        <button id="btn-theme-cycle" class="icon-btn" type="button" data-tooltip="Cycle Theme" aria-label="Cycle Theme">
+          <span data-icon="sunMoon"></span>
+        </button>
+        <button id="btn-settings" class="icon-btn" type="button" data-tooltip="Settings" aria-label="Settings">
+          <span data-icon="settings"></span>
+        </button>
+        <div class="titlebar-divider" aria-hidden="true"></div>
+        <div class="window-controls" role="group" aria-label="Window controls">
+          <button id="win-minimize" class="win-btn" type="button" data-tooltip="Minimize" aria-label="Minimize window">
+            <span data-icon="minimize"></span>
+          </button>
+          <button id="win-maximize" class="win-btn" type="button" data-tooltip="Maximize" aria-label="Maximize window">
+            <span data-icon="maximize"></span>
+          </button>
+          <button id="win-close" class="win-btn win-btn-close" type="button" data-tooltip="Close" aria-label="Close window">
+            <span data-icon="close"></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="main-body">
+      <aside id="sidebar" class="sidebar" aria-label="Primary Filter Navigation">
+        <div class="sidebar-scroll">
+          <section class="nav-section" aria-labelledby="nav-heading-lib">
+            <div class="nav-section-header">
+              <span id="nav-heading-lib" class="micro-label">LIBRARY</span>
+            </div>
+            <ul class="nav-list" role="list" id="nav-library">
+              <li>
+                <button type="button" class="nav-item is-active" data-view="all" data-tooltip="All Tasks">
+                  <span class="nav-icon" data-icon="layers"></span>
+                  <span class="nav-label">All Transfers</span>
+                  <span class="nav-count" data-count-for="all">0</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="nav-item" data-view="downloading" data-tooltip="Downloading">
+                  <span class="nav-icon" data-icon="activity"></span>
+                  <span class="nav-label">Downloading</span>
+                  <span class="nav-count" data-count-for="downloading">0</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="nav-item" data-view="completed" data-tooltip="Completed">
+                  <span class="nav-icon" data-icon="checkSquare"></span>
+                  <span class="nav-label">Completed</span>
+                  <span class="nav-count" data-count-for="completed">0</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="nav-item" data-view="queued" data-tooltip="Queued">
+                  <span class="nav-icon" data-icon="clock"></span>
+                  <span class="nav-label">Queued</span>
+                  <span class="nav-count" data-count-for="queued">0</span>
+                </button>
+              </li>
+            </ul>
+          </section>
+
+          <section class="nav-section" aria-labelledby="nav-heading-queues">
+            <div class="nav-section-header">
+              <span id="nav-heading-queues" class="micro-label">QUEUES</span>
+              <button id="btn-add-queue" class="icon-btn-sm" type="button" data-tooltip="Add Queue" aria-label="Add Queue">
+                <span data-icon="plus"></span>
+              </button>
+            </div>
+            <ul class="nav-list" role="list" id="nav-queues"></ul>
+          </section>
+
+          <section class="nav-section" aria-labelledby="nav-heading-categories">
+            <div class="nav-section-header">
+              <span id="nav-heading-categories" class="micro-label">CATEGORIES</span>
+            </div>
+            <ul class="nav-list" role="list" id="nav-categories">
+              <li>
+                <button type="button" class="nav-item" data-category="Compressed" data-tooltip="Compressed">
+                  <span class="nav-icon" data-icon="archive"></span>
+                  <span class="nav-label">Compressed</span>
+                  <span class="nav-count" data-count-cat="Compressed">0</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="nav-item" data-category="Programs" data-tooltip="Programs">
+                  <span class="nav-icon" data-icon="cpu"></span>
+                  <span class="nav-label">Programs</span>
+                  <span class="nav-count" data-count-cat="Programs">0</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="nav-item" data-category="Video" data-tooltip="Video">
+                  <span class="nav-icon" data-icon="film"></span>
+                  <span class="nav-label">Video</span>
+                  <span class="nav-count" data-count-cat="Video">0</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="nav-item" data-category="Music" data-tooltip="Music">
+                  <span class="nav-icon" data-icon="music"></span>
+                  <span class="nav-label">Music</span>
+                  <span class="nav-count" data-count-cat="Music">0</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="nav-item" data-category="Documents" data-tooltip="Documents">
+                  <span class="nav-icon" data-icon="fileText"></span>
+                  <span class="nav-label">Documents</span>
+                  <span class="nav-count" data-count-cat="Documents">0</span>
+                </button>
+              </li>
+            </ul>
+          </section>
+        </div>
+
+        <div class="sidebar-footer">
+          <button id="btn-sidebar-toggle" class="sidebar-toggle-btn" type="button" data-tooltip="Toggle Sidebar Rail" aria-label="Toggle Sidebar">
+            <span class="nav-icon" data-icon="panelLeft"></span>
+            <span class="nav-label micro-label">COLLAPSE RAIL</span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <section class="toolbar" aria-label="Transfer Controls and Telemetry">
+          <div class="toolbar-left">
+            <button id="btn-add-download" class="btn btn-primary" type="button">
+              <span data-icon="plus"></span>
+              <span>Add Download</span>
+              <kbd class="keycap keycap-inline">CTRL+N</kbd>
+            </button>
+            <button id="btn-resume-all" class="btn btn-ghost" type="button">
+              <span data-icon="play"></span>
+              <span>Resume all</span>
+            </button>
+            <button id="btn-pause-all" class="btn btn-ghost" type="button">
+              <span data-icon="pause"></span>
+              <span>Pause all</span>
+            </button>
+          </div>
+
+          <button
+            id="throughput-widget"
+            class="throughput-module reg-panel"
+            type="button"
+            aria-label="Open Throughput Telemetry Dock"
+          >
+            <span class="reg-mark reg-tl" aria-hidden="true"></span>
+            <span class="reg-mark reg-tr" aria-hidden="true"></span>
+            <span class="reg-mark reg-bl" aria-hidden="true"></span>
+            <span class="reg-mark reg-br" aria-hidden="true"></span>
+            <div class="throughput-meta">
+              <div class="throughput-header">
+                <span id="widget-led" class="status-led" data-state="idle"></span>
+                <span class="micro-label">BUS THROUGHPUT</span>
+              </div>
+              <div class="throughput-readout">
+                <span id="widget-speed-val" class="display-readout">0.0</span>
+                <span id="widget-speed-unit" class="micro-unit">MB/S</span>
+              </div>
+            </div>
+            <div class="throughput-spark-wrap">
+              <canvas id="mini-throughput-canvas" width="160" height="52"></canvas>
+            </div>
+          </button>
+        </section>
+
+        <section id="clipboard-banner" class="clipboard-banner is-hidden" role="status" aria-live="polite">
+          <div class="clipboard-banner-left">
+            <span class="status-led" data-state="downloading"></span>
+            <span class="micro-label">CLIPBOARD URL DETECTED:</span>
+            <span id="clipboard-url-preview" class="clipboard-url-text"></span>
+          </div>
+          <div class="clipboard-banner-actions">
+            <button id="btn-clipboard-download" class="btn btn-primary btn-xs" type="button">Download</button>
+            <button id="btn-clipboard-dismiss" class="btn btn-ghost btn-xs" type="button">Dismiss</button>
+          </div>
+        </section>
+
+        <section class="table-panel reg-panel" aria-label="Download Tasks">
+          <span class="reg-mark reg-tl" aria-hidden="true"></span>
+          <span class="reg-mark reg-tr" aria-hidden="true"></span>
+          <span class="reg-mark reg-bl" aria-hidden="true"></span>
+          <span class="reg-mark reg-br" aria-hidden="true"></span>
+
+          <div
+            id="task-table"
+            class="task-table"
+            role="grid"
+            aria-label="Download task list"
+            aria-multiselectable="true"
+            tabindex="0"
+          >
+            <div id="table-header" class="table-header" role="row"></div>
+            <div id="table-viewport" class="table-viewport">
+              <div id="table-spacer" class="table-spacer">
+                <div id="table-rows" class="table-rows" role="rowgroup"></div>
+              </div>
+              <div id="empty-state" class="empty-state reg-panel is-hidden">
+                <span class="reg-mark reg-tl" aria-hidden="true"></span>
+                <span class="reg-mark reg-tr" aria-hidden="true"></span>
+                <span class="reg-mark reg-bl" aria-hidden="true"></span>
+                <span class="reg-mark reg-br" aria-hidden="true"></span>
+                <h2 id="empty-title" class="panel-title">NO ACTIVE TRANSFERS IN CHANNEL</h2>
+                <p id="empty-desc" class="empty-desc">Dispatch a new HTTP/HTTPS resource URI to initialize segmented telemetry capture.</p>
+                <div class="empty-actions">
+                  <button id="btn-empty-add" class="btn btn-primary" type="button">
+                    <span data-icon="plus"></span>
+                    <span>Add Download</span>
+                  </button>
+                </div>
+                <div class="empty-hints">
+                  <span class="micro-label">NEW TASK <kbd class="keycap">CTRL+N</kbd></span>
+                  <span class="micro-label">PASTE URI <kbd class="keycap">CTRL+V</kbd></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="dock-panel" class="dock-panel reg-panel is-collapsed" aria-label="Telemetry Inspector Dock">
+          <span class="reg-mark reg-tl" aria-hidden="true"></span>
+          <span class="reg-mark reg-tr" aria-hidden="true"></span>
+          <span class="reg-mark reg-bl" aria-hidden="true"></span>
+          <span class="reg-mark reg-br" aria-hidden="true"></span>
+
+          <div id="dock-resize-handle" class="dock-resize-handle" role="separator" aria-orientation="horizontal" aria-label="Resize telemetry dock"></div>
+
+          <header id="dock-header" class="dock-header">
+            <div class="dock-tabs" role="tablist" aria-label="Inspector Tabs">
+              <button
+                id="tab-btn-segments"
+                class="dock-tab is-active"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                aria-controls="tab-panel-segments"
+                data-tab="segments"
+              >
+                SEGMENTS
+              </button>
+              <button
+                id="tab-btn-throughput"
+                class="dock-tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="tab-panel-throughput"
+                data-tab="throughput"
+              >
+                THROUGHPUT
+              </button>
+              <button
+                id="tab-btn-wire"
+                class="dock-tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="tab-panel-wire"
+                data-tab="wire"
+              >
+                PROTOCOL // WIRE
+              </button>
+            </div>
+
+            <div class="dock-header-right">
+              <span id="dock-title-decode" class="panel-title dock-panel-title" data-decode="SEGMENT TELEMETRY">SEGMENT TELEMETRY</span>
+              <button id="btn-dock-close" class="icon-btn-sm" type="button" data-tooltip="Toggle Dock" aria-label="Close or toggle dock">
+                <span data-icon="chevronDown"></span>
+              </button>
+            </div>
+          </header>
+
+          <div class="dock-body">
+            <div id="tab-panel-segments" class="dock-tab-panel" role="tabpanel" aria-labelledby="tab-btn-segments">
+              <div class="segments-top">
+                <div class="segments-task-identity">
+                  <span id="seg-task-led" class="status-led" data-state="idle"></span>
+                  <span id="seg-task-state-word" class="micro-label">IDLE</span>
+                  <span id="seg-task-name" class="seg-task-name">Select a task to inspect byte allocation</span>
+                  <button id="btn-clear-solo" class="btn btn-ghost btn-xs is-hidden" type="button">SOLO ACTIVE // CLEAR</button>
+                </div>
+
+                <div class="seg-mode-switch" role="group" aria-label="Segment visualization mode">
+                  <button type="button" class="seg-mode-btn is-active" data-seg-mode="lanes">LANES</button>
+                  <button type="button" class="seg-mode-btn" data-seg-mode="matrix">SECTOR MAP</button>
+                </div>
+
+                <div class="spec-grid">
+                  <div class="spec-row">
+                    <span class="micro-label">CONNECTIONS</span>
+                    <span class="spec-leader" aria-hidden="true"></span>
+                    <span id="spec-connections" class="spec-val">--</span>
+                  </div>
+                  <div class="spec-row">
+                    <span class="micro-label">DOWNLOADED</span>
+                    <span class="spec-leader" aria-hidden="true"></span>
+                    <span id="spec-downloaded" class="spec-val">--</span>
+                  </div>
+                  <div class="spec-row">
+                    <span class="micro-label">VELOCITY</span>
+                    <span class="spec-leader" aria-hidden="true"></span>
+                    <span id="spec-velocity" class="spec-val">--</span>
+                  </div>
+                  <div class="spec-row">
+                    <span class="micro-label">QUEUE</span>
+                    <span class="spec-leader" aria-hidden="true"></span>
+                    <span id="spec-queue" class="spec-val">--</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="segments-canvas-wrap">
+                <canvas id="segments-canvas" height="112"></canvas>
+                <div id="segments-hover-readout" class="segments-hover-readout is-hidden"></div>
+              </div>
+
+              <div class="segments-bottom-spark">
+                <span class="micro-label">TASK VELOCITY TRACE</span>
+                <div class="task-spark-holder">
+                  <canvas id="task-sparkline-canvas" height="24"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <div id="tab-panel-throughput" class="dock-tab-panel is-hidden" role="tabpanel" aria-labelledby="tab-btn-throughput">
+              <div class="throughput-dock-header">
+                <div class="throughput-dock-readouts">
+                  <div class="tp-main-speed">
+                    <span class="micro-label">CURRENT DOWNLINK</span>
+                    <div class="tp-speed-line">
+                      <span id="dock-tp-current" class="display-readout">0.0</span>
+                      <span id="dock-tp-unit" class="micro-unit">MB/S</span>
+                    </div>
+                  </div>
+                  <div class="tp-peak-readout">
+                    <span class="micro-label">WINDOW PEAK</span>
+                    <span id="dock-tp-peak" class="mono-val">0.0 MB/s</span>
+                  </div>
+                  <div class="tp-peak-readout">
+                    <span class="micro-label">CURSOR DELTA</span>
+                    <span id="dock-tp-delta" class="mono-val">--</span>
+                  </div>
+                  <div class="tp-peak-readout">
+                    <span class="micro-label">SCALE TELEMETRY</span>
+                    <span id="tp-range-shift-badge" class="range-shift-badge">LOCKED // 1.0 MB/S</span>
+                  </div>
+                </div>
+
+                <div class="tp-window-switch" role="group" aria-label="Throughput time window">
+                  <button type="button" class="tp-range-btn is-active" data-window="60">1m</button>
+                  <button type="button" class="tp-range-btn" data-window="300">5m</button>
+                  <button type="button" class="tp-range-btn" data-window="900">15m</button>
+                </div>
+              </div>
+
+              <div class="throughput-canvas-wrap">
+                <canvas id="throughput-canvas" height="140"></canvas>
+              </div>
+            </div>
+
+            <div id="tab-panel-wire" class="dock-tab-panel is-hidden" role="tabpanel" aria-labelledby="tab-btn-wire">
+              <div class="wire-header-grid">
+                <div class="spec-row">
+                  <span class="micro-label">ENDPOINT HOST</span>
+                  <span class="spec-leader" aria-hidden="true"></span>
+                  <span id="wire-host" class="spec-val">--</span>
+                </div>
+                <div class="spec-row">
+                  <span class="micro-label">TRANSPORT // SCHEME</span>
+                  <span class="spec-leader" aria-hidden="true"></span>
+                  <span id="wire-scheme" class="spec-val">--</span>
+                </div>
+                <div class="spec-row">
+                  <span class="micro-label">RANGE CAPABILITY</span>
+                  <span class="spec-leader" aria-hidden="true"></span>
+                  <span id="wire-ranges" class="spec-val">BYTES (HTTP 206)</span>
+                </div>
+                <div class="spec-row">
+                  <span class="micro-label">ACTIVE MULTIPLEX</span>
+                  <span class="spec-leader" aria-hidden="true"></span>
+                  <span id="wire-multiplex" class="spec-val">0 STREAMS</span>
+                </div>
+              </div>
+              <div id="wire-log-viewport" class="wire-log-viewport" role="log" aria-live="off"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer id="status-bar" class="status-bar" role="contentinfo">
+      <div class="status-left">
+        <div class="status-cell">
+          <span id="status-link-led" class="status-led" data-state="idle"></span>
+          <span id="status-link-label" class="micro-label">INIT TELEMETRY BUS...</span>
+        </div>
+        <div class="status-cell">
+          <span class="micro-label">DOWN</span>
+          <span id="status-down-rate" class="mono-val">0 B/s</span>
+        </div>
+        <div class="status-cell">
+          <span class="micro-label">ACTIVE</span>
+          <span id="status-active-count" class="mono-val">0</span>
+        </div>
+        <div class="status-cell">
+          <span class="micro-label">QUEUED</span>
+          <span id="status-queued-count" class="mono-val">0</span>
+        </div>
+      </div>
+
+      <div class="status-right">
+        <div id="status-disk-cell" class="status-cell">
+          <span class="micro-label">DISK FREE</span>
+          <span id="status-disk-val" class="mono-val">UNAVAILABLE</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ADD DOWNLOAD DIALOG -->
+  <div id="dialog-add-backdrop" class="modal-backdrop is-hidden" role="presentation">
+    <div
+      id="dialog-add"
+      class="modal-dialog reg-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dialog-add-title"
+    >
+      <span class="reg-mark reg-tl" aria-hidden="true"></span>
+      <span class="reg-mark reg-tr" aria-hidden="true"></span>
+      <span class="reg-mark reg-bl" aria-hidden="true"></span>
+      <span class="reg-mark reg-br" aria-hidden="true"></span>
+
+      <header class="modal-header">
+        <h2 id="dialog-add-title" class="panel-title" data-decode="NEW DOWNLOAD">NEW DOWNLOAD</h2>
+        <button type="button" class="icon-btn-sm" data-close-modal="dialog-add-backdrop" data-tooltip="Close (Esc)" aria-label="Close dialog">
+          <span data-icon="close"></span>
+        </button>
+      </header>
+
+      <form id="form-add-download" class="modal-body">
+        <div class="form-field">
+          <label for="input-urls" class="micro-label">SOURCE URIS (ONE PER LINE)</label>
+          <textarea
+            id="input-urls"
+            class="mono-textarea block-caret"
+            rows="4"
+            placeholder="https://mirror.example.org/iso/archlinux-x86_64.iso"
+            required
+            spellcheck="false"
+          ></textarea>
+        </div>
+
+        <div class="form-row-2col">
+          <div class="form-field">
+            <label for="input-filename" class="micro-label">DETECTED FILENAME</label>
+            <input id="input-filename" class="mono-input" type="text" placeholder="Auto-detected from URI" spellcheck="false" />
+          </div>
+          <div class="form-field">
+            <label for="select-category" class="micro-label">CATEGORY</label>
+            <select id="select-category" class="mono-select">
+              <option value="Compressed">Compressed</option>
+              <option value="Programs">Programs</option>
+              <option value="Video">Video</option>
+              <option value="Music">Music</option>
+              <option value="Documents">Documents</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row-2col">
+          <div class="form-field">
+            <label for="input-folder" class="micro-label">DESTINATION DIRECTORY</label>
+            <div style="display: flex; gap: 6px;">
+              <input id="input-folder" class="mono-input" type="text" value="C:\Users\Administrator\Downloads" spellcheck="false" style="flex: 1;" />
+              <button type="button" id="btn-browse-folder" class="btn btn-ghost" style="padding: 0 10px; font-size: 11px;">Browse</button>
+            </div>
+          </div>
+          <div class="form-field">
+            <label for="select-queue" class="micro-label">TARGET QUEUE</label>
+            <select id="select-queue" class="mono-select"></select>
+          </div>
+        </div>
+
+        <footer class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close-modal="dialog-add-backdrop">Cancel</button>
+          <button type="submit" id="btn-submit-queue" name="mode" value="queue" class="btn btn-ghost">Add to queue</button>
+          <button type="submit" id="btn-submit-now" name="mode" value="now" class="btn btn-primary">Download now</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <!-- SETTINGS DIALOG -->
+  <div id="dialog-settings-backdrop" class="modal-backdrop is-hidden" role="presentation">
+    <div
+      id="dialog-settings"
+      class="modal-dialog reg-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dialog-settings-title"
+    >
+      <span class="reg-mark reg-tl" aria-hidden="true"></span>
+      <span class="reg-mark reg-tr" aria-hidden="true"></span>
+      <span class="reg-mark reg-bl" aria-hidden="true"></span>
+      <span class="reg-mark reg-br" aria-hidden="true"></span>
+
+      <header class="modal-header">
+        <h2 id="dialog-settings-title" class="panel-title" data-decode="SYSTEM CONFIGURATION">SYSTEM CONFIGURATION</h2>
+        <button type="button" class="icon-btn-sm" data-close-modal="dialog-settings-backdrop" data-tooltip="Close (Esc)" aria-label="Close settings">
+          <span data-icon="close"></span>
+        </button>
+      </header>
+
+      <div class="modal-body">
+        <div class="form-field">
+          <span class="micro-label">COLORIMETRY // THEME PROFILE</span>
+          <div id="theme-picker-grid" class="theme-picker-grid" role="radiogroup" aria-label="Theme selection"></div>
+        </div>
+
+        <div class="form-field">
+          <span class="micro-label">CLIPBOARD MONITOR</span>
+          <label class="toggle-row" for="toggle-clipboard">
+            <span class="toggle-label-text">Automatically detect HTTP/HTTPS links copied to clipboard</span>
+            <input id="toggle-clipboard" type="checkbox" checked />
+          </label>
+        </div>
+
+        <div class="form-field">
+          <span class="micro-label">PIEZO TELEMETRY AUDIO</span>
+          <label class="toggle-row" for="toggle-piezo">
+            <span class="toggle-label-text">Synthesize 2ms hardware piezo clicks on UI actuation and task completion</span>
+            <input id="toggle-piezo" type="checkbox" checked />
+          </label>
+        </div>
+      </div>
+
+      <footer class="modal-footer">
+        <button type="button" class="btn btn-primary" data-close-modal="dialog-settings-backdrop">Done</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- COMMAND PALETTE -->
+  <div id="dialog-palette-backdrop" class="modal-backdrop is-hidden" role="presentation">
+    <div
+      id="dialog-palette"
+      class="palette-dialog reg-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command Palette"
+    >
+      <span class="reg-mark reg-tl" aria-hidden="true"></span>
+      <span class="reg-mark reg-tr" aria-hidden="true"></span>
+      <span class="reg-mark reg-bl" aria-hidden="true"></span>
+      <span class="reg-mark reg-br" aria-hidden="true"></span>
+
+      <div class="palette-input-row">
+        <span class="palette-prompt" aria-hidden="true">&gt;</span>
+        <input
+          id="palette-input"
+          class="palette-input block-caret"
+          type="text"
+          placeholder="TYPE A COMMAND OR SEARCH TASKS..."
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <kbd class="keycap">ESC</kbd>
+      </div>
+
+      <ul id="palette-list" class="palette-list" role="listbox" aria-label="Available commands"></ul>
+    </div>
+  </div>
+
+  <!-- CONTEXT MENU -->
+  <ul id="context-menu" class="context-menu reg-panel is-hidden" role="menu" aria-label="Task actions"></ul>
+
+  <!-- FULL WINDOW DROP OVERLAY -->
+  <div id="drop-overlay" class="drop-overlay is-hidden" aria-hidden="true">
+    <div class="drop-box reg-panel">
+      <span class="reg-mark reg-tl" aria-hidden="true"></span>
+      <span class="reg-mark reg-tr" aria-hidden="true"></span>
+      <span class="reg-mark reg-bl" aria-hidden="true"></span>
+      <span class="reg-mark reg-br" aria-hidden="true"></span>
+      <h2 class="panel-title">DROP URI TO INITIALIZE TRANSFER</h2>
+      <p class="empty-desc">Release links or text payload to enqueue into OpenDL.</p>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

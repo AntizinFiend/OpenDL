@@ -1,0 +1,26 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Local runtime databases and logs
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+
+# Scratch files and temporary bundles
+opendl_ui_bundle.txt
+New folder/
+
+# OS-specific files
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
+
+# IDE / Editor configuration
+.vscode/
+.idea/
+*.swp
+*.swo
