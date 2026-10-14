@@ -32,6 +32,7 @@ import { renderGraphs, initGraphInteractions } from "./graph.js";
 import {
   openAddDialog,
   openSettingsDialog,
+  openQueueDialog,
   closeAllDialogs,
   showContextMenu,
   initDialogs
@@ -268,8 +269,7 @@ async function initApp() {
   });
 
   document.getElementById("btn-add-queue")?.addEventListener("click", () => {
-    const nextNum = store.queues.length + 1;
-    addQueueName(`Queue 0${nextNum}`);
+    openQueueDialog();
   });
 
   document.getElementById("btn-sidebar-toggle")?.addEventListener("click", () => {

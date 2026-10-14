@@ -1,37 +1,60 @@
 use anyhow::{Context, Result};
-use opendl_engine::{DownloadHandle, DownloadOptions, Downloader};
+use opendl_engine::{
+    Aria2Client, Aria2Process, DownloadOptions, DownloadProgress,
+};
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{error, info};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::db::{Database, TaskRecord, TaskStatus};
 use crate::ipc::IpcMessage;
+use crate::power::trigger_power_action;
 
 pub struct DownloadManager {
     db: Arc<Database>,
     default_download_dir: PathBuf,
-    active_downloads: Arc<Mutex<HashMap<Uuid, DownloadHandle>>>,
+    _aria2_proc: Arc<Mutex<Option<Aria2Process>>>,
+    aria2_client: Aria2Client,
+    active_tasks: Arc<Mutex<HashMap<Uuid, String>>>, // task_id -> aria2_gid
+    gid_to_task: Arc<Mutex<HashMap<String, Uuid>>>,  // aria2_gid -> task_id
+    progress_cache: Arc<Mutex<HashMap<Uuid, DownloadProgress>>>,
+    last_db_save: Arc<Mutex<HashMap<Uuid, u64>>>,
 }
 
 impl DownloadManager {
     pub fn new(db: Arc<Database>, download_dir: Option<PathBuf>) -> Self {
-        let dir = download_dir.unwrap_or_else(|| {
-            dirs_or_default_download_dir()
-        });
+        let dir = download_dir.unwrap_or_else(dirs_or_default_download_dir);
+        let _ = std::fs::create_dir_all(&dir);
 
-        Self {
+        let proc = Aria2Process::spawn(None, Some(&dir))
+            .expect("Failed to spawn aria2c background sidecar");
+        let client = proc.client();
+
+        let mgr = Self {
             db,
             default_download_dir: dir,
-            active_downloads: Arc::new(Mutex::new(HashMap::new())),
-        }
+            _aria2_proc: Arc::new(Mutex::new(Some(proc))),
+            aria2_client: client,
+            active_tasks: Arc::new(Mutex::new(HashMap::new())),
+            gid_to_task: Arc::new(Mutex::new(HashMap::new())),
+            progress_cache: Arc::new(Mutex::new(HashMap::new())),
+            last_db_save: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        mgr.start_telemetry_loop();
+        mgr
     }
 
     pub fn db(&self) -> &Arc<Database> {
         &self.db
+    }
+
+    pub fn client(&self) -> &Aria2Client {
+        &self.aria2_client
     }
 
     pub async fn add_from_ipc(&self, msg: IpcMessage, start_now: bool) -> Result<Uuid> {
@@ -95,7 +118,7 @@ impl DownloadManager {
             }
 
             if let Err(e) = self.start_download(task_id, options).await {
-                error!(task_id = %task_id, error = %e, "Failed to start download stream immediately");
+                error!(task_id = %task_id, error = %e, "Failed to start aria2 download");
                 let _ = self.db.update_task_progress(task_id, 0, TaskStatus::Failed);
             }
         }
@@ -104,120 +127,139 @@ impl DownloadManager {
     }
 
     pub async fn start_download(&self, task_id: Uuid, options: DownloadOptions) -> Result<()> {
-        let downloader = Downloader::new(options)?;
-        let (handle, join_handle) = downloader.start().await?;
-
-        // Update task metadata from probed response
-        let content_length = handle.metadata.content_length;
-        let etag = handle.metadata.etag.clone();
-        let suggested_filename = handle.metadata.suggested_filename.clone();
-        let real_destination = handle.destination.clone();
-
-        if let Ok(Some(mut record)) = self.db.get_task(task_id) {
-            let ext = std::path::Path::new(&suggested_filename)
-                .extension()
-                .and_then(|e| e.to_str());
-
-            if record.filename == "download.bin" && suggested_filename != "download.bin" {
-                record.filename = suggested_filename.clone();
-                record.destination = real_destination;
-                record.category = self.db.classify_category(&suggested_filename);
-            } else if !record.filename.contains('.') && suggested_filename != "download.bin" {
-                if let Some(e) = ext {
-                    record.filename = format!("{}.{}", record.filename, e);
-                    record.destination = record.destination.with_extension(e);
-                    record.category = self.db.classify_category(&record.filename);
-                } else {
-                    record.filename = suggested_filename.clone();
-                    record.destination = real_destination;
-                    record.category = self.db.classify_category(&suggested_filename);
-                }
-            }
-            record.total_size = content_length;
-            record.etag = etag;
-            record.status = TaskStatus::Downloading;
-            let _ = self.db.insert_task(&record);
-        }
-
-        let mut progress_rx = handle.progress_rx.clone();
-        {
-            let mut active = self.active_downloads.lock();
-            active.insert(task_id, handle);
-        }
-
-        let db = self.db.clone();
-        let active_clone = self.active_downloads.clone();
-
-        tokio::spawn(async move {
-            let mut last_saved = 0u64;
-
-            while progress_rx.changed().await.is_ok() {
-                let p = progress_rx.borrow().clone();
-
-                // Throttle DB updates to at most once per 256KB or on completion
-                if p.downloaded_bytes.saturating_sub(last_saved) > 256 * 1024 || p.is_complete {
-                    last_saved = p.downloaded_bytes;
-                    let status = if p.is_complete {
-                        TaskStatus::Completed
-                    } else {
-                        TaskStatus::Downloading
-                    };
-                    let _ = db.update_task_progress(task_id, p.downloaded_bytes, status);
-                }
-
-                if p.is_complete {
-                    break;
-                }
-            }
-
-            match join_handle.await {
-                Ok(Ok(())) => {
-                    info!(task_id = %task_id, "Download task completed successfully");
-                    let _ = db.update_task_progress(task_id, last_saved, TaskStatus::Completed);
-                }
-                Ok(Err(e)) => {
-                    error!(task_id = %task_id, error = %e, "Download task failed");
-                    let _ = db.update_task_progress(task_id, last_saved, TaskStatus::Failed);
-                }
-                Err(e) => {
-                    error!(task_id = %task_id, error = %e, "Download task panicked");
-                    let _ = db.update_task_progress(task_id, last_saved, TaskStatus::Failed);
-                }
-            }
-
-            active_clone.lock().remove(&task_id);
-        });
-
-        Ok(())
-    }
-
-    pub fn get_active_progress(&self) -> HashMap<Uuid, opendl_engine::DownloadProgress> {
-        let active = self.active_downloads.lock();
-        let mut map = HashMap::new();
-        for (id, handle) in active.iter() {
-            map.insert(*id, handle.progress_rx.borrow().clone());
-        }
-        map
-    }
-
-    pub fn pause_task(&self, task_id: Uuid) -> bool {
-        let mut active = self.active_downloads.lock();
-        if let Some(handle) = active.remove(&task_id) {
-            handle.pause();
-            let _ = self.db.update_task_progress(task_id, 0, TaskStatus::Paused);
-            true
-        } else {
-            false
-        }
-    }
-
-    pub async fn start_task_by_id(&self, task_id: Uuid) -> Result<()> {
         let record = self
             .db
             .get_task(task_id)?
             .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id))?;
+
+        let dest_parent = record
+            .destination
+            .parent()
+            .unwrap_or_else(|| Path::new(&self.default_download_dir));
+        let _ = std::fs::create_dir_all(dest_parent);
+
+        let mut headers = Vec::new();
+        for (k, v) in &options.headers {
+            headers.push(format!("{}: {}", k, v));
+        }
+
+        // Determine queue speed limit if configured
+        let mut speed_limit = options.speed_limit_bytes_per_sec;
+        if speed_limit.is_none() {
+            if let Ok(Some(q)) = self.db.get_queue(&record.queue_id) {
+                if q.speed_limit_kbps > 0 {
+                    speed_limit = Some(q.speed_limit_kbps * 1024);
+                }
+            }
+        }
+
+        let gid = self
+            .aria2_client
+            .add_uri(
+                &[record.url.clone()],
+                Some(dest_parent),
+                Some(&record.filename),
+                &headers,
+                speed_limit,
+                Some(options.connections),
+            )
+            .await
+            .with_context(|| format!("Aria2 failed to add URI: {}", record.url))?;
+
+        info!(task_id = %task_id, gid = %gid, "Aria2 download initiated");
+
+        {
+            let mut at = self.active_tasks.lock();
+            let mut gt = self.gid_to_task.lock();
+            at.insert(task_id, gid.clone());
+            gt.insert(gid, task_id);
+        }
+
+        let _ = self.db.update_task_progress(task_id, record.downloaded_bytes, TaskStatus::Downloading);
+        Ok(())
+    }
+
+    pub fn pause_task(&self, task_id: Uuid) -> bool {
+        let gid = {
+            let at = self.active_tasks.lock();
+            at.get(&task_id).cloned()
+        };
+
+        if let Some(gid) = gid {
+            let client = self.aria2_client.clone();
+            tokio::spawn(async move {
+                let _ = client.pause(&gid).await;
+            });
+            let _ = self.db.update_task_progress(task_id, 0, TaskStatus::Paused);
+            true
+        } else {
+            let _ = self.db.update_task_progress(task_id, 0, TaskStatus::Paused);
+            true
+        }
+    }
+
+    pub async fn resume_task(&self, task_id: Uuid) -> Result<bool> {
+        let record = self
+            .db
+            .get_task(task_id)?
+            .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id))?;
+
+        let gid = {
+            let at = self.active_tasks.lock();
+            at.get(&task_id).cloned()
+        };
+
+        if let Some(gid) = gid {
+            match self.aria2_client.unpause(&gid).await {
+                Ok(_) => {
+                    let _ = self.db.update_task_progress(task_id, record.downloaded_bytes, TaskStatus::Downloading);
+                    return Ok(true);
+                }
+                Err(e) => {
+                    debug!(gid = %gid, error = %e, "unpause failed, re-adding download to aria2");
+                }
+            }
+        }
+
         let options = DownloadOptions::new(&record.url, &record.destination);
-        self.start_download(task_id, options).await
+        self.start_download(task_id, options).await?;
+        Ok(true)
+    }
+
+    pub fn delete_task(&self, task_id: Uuid, delete_file: bool) -> Result<()> {
+        let gid = {
+            let mut at = self.active_tasks.lock();
+            let mut gt = self.gid_to_task.lock();
+            let mut pc = self.progress_cache.lock();
+            pc.remove(&task_id);
+            if let Some(g) = at.remove(&task_id) {
+                gt.remove(&g);
+                Some(g)
+            } else {
+                None
+            }
+        };
+
+        if let Some(gid) = gid {
+            let client = self.aria2_client.clone();
+            tokio::spawn(async move {
+                let _ = client.remove(&gid).await;
+            });
+        }
+
+        if let Ok(Some(record)) = self.db.get_task(task_id) {
+            if delete_file && record.destination.exists() {
+                let _ = std::fs::remove_file(&record.destination);
+            }
+        }
+
+        self.db.delete_task(task_id)?;
+        Ok(())
+    }
+
+    pub fn get_active_progress(&self) -> HashMap<Uuid, DownloadProgress> {
+        let pc = self.progress_cache.lock();
+        pc.clone()
     }
 
     pub async fn process_queue(&self, queue_id: &str) -> Result<()> {
@@ -266,6 +308,116 @@ impl DownloadManager {
         self.process_queue(queue_id).await
     }
 
+    fn start_telemetry_loop(&self) {
+        let client = self.aria2_client.clone();
+        let db = self.db.clone();
+        let active_tasks = self.active_tasks.clone();
+        let gid_to_task = self.gid_to_task.clone();
+        let progress_cache = self.progress_cache.clone();
+        let last_db_save = self.last_db_save.clone();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(200));
+
+            loop {
+                interval.tick().await;
+
+                // 1. Poll active downloads
+                if let Ok(active) = client.tell_active().await {
+                    for status in active {
+                        let task_id = {
+                            let gt = gid_to_task.lock();
+                            gt.get(&status.gid).cloned()
+                        };
+
+                        if let Some(id) = task_id {
+                            let progress = status.to_download_progress();
+                            let dl = progress.downloaded_bytes;
+
+                            // Update in-memory telemetry cache for high-frequency UI rendering
+                            {
+                                let mut pc = progress_cache.lock();
+                                pc.insert(id, progress);
+                            }
+
+                            // Throttled DB persistence (at least 256KB change)
+                            let should_save = {
+                                let mut saves = last_db_save.lock();
+                                let last = saves.get(&id).cloned().unwrap_or(0);
+                                if dl.saturating_sub(last) > 256 * 1024 {
+                                    saves.insert(id, dl);
+                                    true
+                                } else {
+                                    false
+                                }
+                            };
+
+                            if should_save {
+                                let _ = db.update_task_progress(id, dl, TaskStatus::Downloading);
+                            }
+                        }
+                    }
+                }
+
+                // 2. Poll stopped / completed / error downloads
+                if let Ok(stopped) = client.tell_stopped(0, 50).await {
+                    for status in stopped {
+                        let task_id = {
+                            let gt = gid_to_task.lock();
+                            gt.get(&status.gid).cloned()
+                        };
+
+                        if let Some(id) = task_id {
+                            let is_complete = status.status == "complete";
+                            let dl: u64 = status.completed_length.parse().unwrap_or(0);
+
+                            if is_complete {
+                                info!(task_id = %id, gid = %status.gid, "Task marked complete in aria2");
+                                let _ = db.update_task_progress(id, dl, TaskStatus::Completed);
+                                {
+                                    let mut pc = progress_cache.lock();
+                                    if let Some(p) = pc.get_mut(&id) {
+                                        p.is_complete = true;
+                                        p.downloaded_bytes = dl;
+                                        p.speed_bytes_per_sec = 0.0;
+                                        p.active_connections = 0;
+                                    }
+                                }
+
+                                // Check if queue finished and execute power action if configured
+                                if let Ok(Some(task)) = db.get_task(id) {
+                                    if let Ok(active_in_queue) = db.count_downloading_tasks_in_queue(&task.queue_id) {
+                                        if active_in_queue == 0 {
+                                            if let Ok(Some(q)) = db.get_queue(&task.queue_id) {
+                                                if let Some(ref action) = q.on_complete_action {
+                                                    if action != "none" {
+                                                        info!(queue = %q.name, action = %action, "Queue completed! Executing power action");
+                                                        let _ = trigger_power_action(action);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else if status.status == "error" {
+                                warn!(task_id = %id, gid = %status.gid, err = ?status.error_message, "Task marked failed in aria2");
+                                let _ = db.update_task_progress(id, dl, TaskStatus::Failed);
+                            }
+
+                            // Clean up active mappings
+                            {
+                                let mut at = active_tasks.lock();
+                                let mut gt = gid_to_task.lock();
+                                at.remove(&id);
+                                gt.remove(&status.gid);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     pub fn start_scheduler(self: &Arc<Self>) {
         let mgr = Arc::downgrade(self);
         std::thread::Builder::new()
@@ -277,14 +429,14 @@ impl DownloadManager {
                 {
                     Ok(rt) => rt,
                     Err(e) => {
-                        tracing::error!("Failed to create scheduler runtime: {}", e);
+                        error!("Failed to create scheduler runtime: {}", e);
                         return;
                     }
                 };
 
                 rt.block_on(async move {
                     loop {
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        tokio::time::sleep(Duration::from_secs(1)).await;
                         if let Some(m) = mgr.upgrade() {
                             let _ = m.check_schedules_and_process().await;
                         } else {
@@ -301,7 +453,6 @@ impl DownloadManager {
         let queues = self.db.get_all_queues()?;
 
         for q in queues {
-            // Check time-based scheduling
             if let Some(ref start_time) = q.schedule_start {
                 if start_time == &now && !q.is_active {
                     let _ = self.db.set_queue_active(&q.id, true);

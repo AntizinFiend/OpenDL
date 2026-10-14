@@ -159,6 +159,11 @@
       </aside>
 
       <main class="workspace">
+        <div id="shutdown-countdown-banner" class="shutdown-banner is-hidden" role="alert">
+          <span>SYSTEM SHUTDOWN SCHEDULED IN <strong id="shutdown-seconds">60</strong>s (ON QUEUE COMPLETION)</span>
+          <button id="btn-abort-shutdown" class="btn btn-ghost btn-xs" type="button">ABORT SHUTDOWN</button>
+        </div>
+
         <section class="toolbar" aria-label="Transfer Controls and Telemetry">
           <div class="toolbar-left">
             <button id="btn-add-download" class="btn btn-primary" type="button">
@@ -576,6 +581,62 @@
       <footer class="modal-footer">
         <button type="button" class="btn btn-primary" data-close-modal="dialog-settings-backdrop">Done</button>
       </footer>
+    </div>
+  </div>
+
+  <!-- QUEUE SETTINGS DIALOG -->
+  <div id="dialog-queue-backdrop" class="modal-backdrop is-hidden" role="presentation">
+    <div
+      id="dialog-queue"
+      class="modal-dialog reg-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dialog-queue-title"
+    >
+      <span class="reg-mark reg-tl" aria-hidden="true"></span>
+      <span class="reg-mark reg-tr" aria-hidden="true"></span>
+      <span class="reg-mark reg-bl" aria-hidden="true"></span>
+      <span class="reg-mark reg-br" aria-hidden="true"></span>
+
+      <header class="modal-header">
+        <h2 id="dialog-queue-title" class="panel-title" data-decode="QUEUE CONFIGURATION">QUEUE CONFIGURATION</h2>
+        <button type="button" class="icon-btn-sm" data-close-modal="dialog-queue-backdrop" data-tooltip="Close (Esc)" aria-label="Close queue settings">
+          <span data-icon="close"></span>
+        </button>
+      </header>
+
+      <form id="form-queue" class="modal-body" onsubmit="return false;">
+        <input id="queue-edit-id" type="hidden" value="" />
+        <div class="form-field">
+          <label for="queue-name" class="micro-label">QUEUE NAME</label>
+          <input id="queue-name" class="mono-input" type="text" required />
+        </div>
+
+        <div class="form-row-2col">
+          <div class="form-field">
+            <label for="queue-max-concurrent" class="micro-label">MAX CONCURRENT STREAMS</label>
+            <input id="queue-max-concurrent" class="mono-input" type="number" min="1" max="16" value="2" />
+          </div>
+          <div class="form-field">
+            <label for="queue-speed-limit" class="micro-label">BANDWIDTH LIMIT (KB/S, 0=UNLIMITED)</label>
+            <input id="queue-speed-limit" class="mono-input" type="number" min="0" step="64" value="0" />
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label for="queue-on-finish" class="micro-label">ON QUEUE FINISH POWER ACTION</label>
+          <select id="queue-on-finish" class="mono-select">
+            <option value="none">DO NOTHING // STANDBY</option>
+            <option value="sleep">PUT PC TO SLEEP (SUSPEND)</option>
+            <option value="shutdown">SHUT DOWN PC (WITH 60S COUNTDOWN ABORT)</option>
+          </select>
+        </div>
+
+        <footer class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close-modal="dialog-queue-backdrop">Cancel</button>
+          <button type="button" id="btn-save-queue" class="btn btn-primary">Save Queue Settings</button>
+        </footer>
+      </form>
     </div>
   </div>
 

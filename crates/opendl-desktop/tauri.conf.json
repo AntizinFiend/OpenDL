@@ -34,6 +34,9 @@
     "icon": [
       "icons/icon.ico",
       "icons/icon.png"
+    ],
+    "resources": [
+      "bin/aria2c.exe"
     ]
   }
 }

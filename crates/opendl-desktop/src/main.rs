@@ -156,6 +156,7 @@ async fn create_queue(
         schedule_start: None,
         schedule_stop: None,
         created_at: now,
+        on_complete_action: Some("none".to_string()),
     };
     manager.db().insert_or_update_queue(&queue).map_err(|e| e.to_string())?;
     Ok(queue)
@@ -205,6 +206,18 @@ async fn move_task_to_queue(
 ) -> Result<bool, String> {
     let id = Uuid::parse_str(&task_id).map_err(|e| e.to_string())?;
     manager.db().set_task_queue(id, &queue_id).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn abort_shutdown() -> Result<bool, String> {
+    opendl_core::abort_system_shutdown().map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn trigger_power_action(action: String) -> Result<bool, String> {
+    opendl_core::trigger_power_action(&action).map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -427,23 +440,88 @@ fn run_app() -> Result<()> {
                     let h = handle.clone();
                     let mgr = mgr_ipc.clone();
                     async move {
-                        // 1. Restore & focus any desktop windows
-                        for (_label, window) in h.webview_windows() {
-                            let _ = window.unminimize();
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                            // 2. Emit intercepted download event to UI dialog
-                            let _ = window.emit("browser_download_request", &msg);
-                        }
-
-                        // If user sent explicit direct download flag
-                        if msg.action == "add_download_direct" {
-                            match mgr.add_from_ipc(msg, true).await {
-                                Ok(id) => IpcResponse::ok_with_id(id, "Task added and started"),
-                                Err(e) => IpcResponse::error(format!("Failed to add task: {}", e)),
+                        match msg.action.as_str() {
+                            "add_download_direct" => {
+                                match mgr.add_from_ipc(msg, true).await {
+                                    Ok(id) => IpcResponse::ok_with_id(id, "Task added and started"),
+                                    Err(e) => IpcResponse::error(format!("Failed to add task: {}", e)),
+                                }
                             }
-                        } else {
-                            IpcResponse::ok("Intercepted and prompted in OpenDL Desktop dialog")
+                            "list_tasks" => {
+                                match mgr.db().get_all_tasks() {
+                                    Ok(tasks) => IpcResponse::ok_with_tasks(tasks),
+                                    Err(e) => IpcResponse::error(format!("Failed to list tasks: {}", e)),
+                                }
+                            }
+                            "pause_task" => {
+                                if let Some(id) = msg.task_id {
+                                    mgr.pause_task(id);
+                                    IpcResponse::ok("Task paused")
+                                } else {
+                                    IpcResponse::error("Missing task_id")
+                                }
+                            }
+                            "resume_task" => {
+                                if let Some(id) = msg.task_id {
+                                    match mgr.resume_task(id).await {
+                                        Ok(_) => IpcResponse::ok("Task resumed"),
+                                        Err(e) => IpcResponse::error(format!("Failed to resume task: {}", e)),
+                                    }
+                                } else {
+                                    IpcResponse::error("Missing task_id")
+                                }
+                            }
+                            "delete_task" => {
+                                if let Some(id) = msg.task_id {
+                                    match mgr.delete_task(id, false) {
+                                        Ok(_) => IpcResponse::ok("Task deleted"),
+                                        Err(e) => IpcResponse::error(format!("Failed to delete task: {}", e)),
+                                    }
+                                } else {
+                                    IpcResponse::error("Missing task_id")
+                                }
+                            }
+                            "list_queues" => {
+                                match mgr.db().get_all_queues() {
+                                    Ok(queues) => IpcResponse::ok_with_queues(queues),
+                                    Err(e) => IpcResponse::error(format!("Failed to list queues: {}", e)),
+                                }
+                            }
+                            "start_queue" => {
+                                if let Some(qid) = msg.queue_id {
+                                    let _ = mgr.start_queue(&qid).await;
+                                    IpcResponse::ok("Queue started")
+                                } else {
+                                    IpcResponse::error("Missing queue_id")
+                                }
+                            }
+                            "pause_queue" => {
+                                if let Some(qid) = msg.queue_id {
+                                    let _ = mgr.pause_queue(&qid);
+                                    IpcResponse::ok("Queue paused")
+                                } else {
+                                    IpcResponse::error("Missing queue_id")
+                                }
+                            }
+                            "abort_shutdown" => {
+                                let _ = opendl_core::abort_system_shutdown();
+                                IpcResponse::ok("Shutdown aborted")
+                            }
+                            "trigger_power" => {
+                                let action = msg.filename.unwrap_or_else(|| "sleep".to_string());
+                                let _ = opendl_core::trigger_power_action(&action);
+                                IpcResponse::ok("Power action triggered")
+                            }
+                            _ => {
+                                // Default interception: Prompt in desktop UI dialog
+                                for (_label, window) in h.webview_windows() {
+                                    let _ = window.unminimize();
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                    let _ = window.emit("browser_download_request", &msg);
+                                }
+                                IpcResponse::ok("Intercepted and prompted in OpenDL Desktop dialog")
+                            }
                         }
                     }
                 });
@@ -477,6 +555,8 @@ fn run_app() -> Result<()> {
             pause_queue,
             move_task_to_queue,
             select_folder,
+            abort_shutdown,
+            trigger_power_action,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running Tauri application");

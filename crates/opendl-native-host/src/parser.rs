@@ -71,6 +71,7 @@ pub fn parse_native_payload(raw: &[u8]) -> Result<ParsedPayload> {
                 headers: if headers.is_empty() { None } else { Some(headers) },
                 task_id: None,
                 connections: obj.get("connections").and_then(|v| v.as_u64()).map(|n| n as usize),
+                queue_id: obj.get("queue_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
             }));
         }
     }

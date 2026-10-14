@@ -33,6 +33,8 @@ fn test_database_crud_operations() {
         etag: Some("\"etag123\"".to_string()),
         created_at: 1000,
         updated_at: 1000,
+        queue_id: "main".to_string(),
+        queue_order: 0,
     };
 
     db.insert_task(&record).unwrap();
@@ -87,6 +89,7 @@ async fn test_named_pipe_ipc_roundtrip() {
             headers: None,
             task_id: None,
             connections: None,
+            queue_id: None,
         };
 
         let resp = IpcClient::send_request(&pipe_name, &req).await.unwrap();

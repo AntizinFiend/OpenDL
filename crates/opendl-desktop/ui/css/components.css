@@ -1409,3 +1409,22 @@
 .wire-status.is-err {
   color: var(--failed);
 }
+
+/* SHUTDOWN COUNTDOWN BANNER */
+.shutdown-banner {
+  background: var(--track);
+  border-bottom: 2px solid var(--accent);
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  padding: 6px var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 50;
+}
+
+.shutdown-banner.is-hidden {
+  display: none !important;
+}

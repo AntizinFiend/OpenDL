@@ -43,6 +43,10 @@ fn default_queue_id() -> String {
     "main".to_string()
 }
 
+fn default_on_complete() -> Option<String> {
+    Some("none".to_string())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueueRecord {
     pub id: String,
@@ -53,6 +57,8 @@ pub struct QueueRecord {
     pub schedule_start: Option<String>,
     pub schedule_stop: Option<String>,
     pub created_at: u64,
+    #[serde(default = "default_on_complete")]
+    pub on_complete_action: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,7 +151,8 @@ impl Database {
                 is_active INTEGER NOT NULL DEFAULT 1,
                 schedule_start TEXT,
                 schedule_stop TEXT,
-                created_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL,
+                on_complete_action TEXT DEFAULT 'none'
             );",
         )?;
 
@@ -163,6 +170,13 @@ impl Database {
             let _ = conn.execute("ALTER TABLE tasks ADD COLUMN queue_order INTEGER NOT NULL DEFAULT 0", []);
         }
 
+        let has_on_complete: bool = conn
+            .prepare("SELECT on_complete_action FROM queues LIMIT 1")
+            .is_ok();
+        if !has_on_complete {
+            let _ = conn.execute("ALTER TABLE queues ADD COLUMN on_complete_action TEXT DEFAULT 'none'", []);
+        }
+
         // Seed default queues: Main Queue and Night Queue
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -170,14 +184,14 @@ impl Database {
             .as_secs();
 
         conn.execute(
-            "INSERT OR IGNORE INTO queues (id, name, max_concurrent, speed_limit_kbps, is_active, schedule_start, schedule_stop, created_at)
-             VALUES ('main', 'Main Queue', 2, 0, 1, NULL, NULL, ?1)",
+            "INSERT OR IGNORE INTO queues (id, name, max_concurrent, speed_limit_kbps, is_active, schedule_start, schedule_stop, created_at, on_complete_action)
+             VALUES ('main', 'Main Queue', 2, 0, 1, NULL, NULL, ?1, 'none')",
             params![now as i64],
         )?;
 
         conn.execute(
-            "INSERT OR IGNORE INTO queues (id, name, max_concurrent, speed_limit_kbps, is_active, schedule_start, schedule_stop, created_at)
-             VALUES ('night', 'Night Queue', 1, 0, 0, '01:00', '07:00', ?1)",
+            "INSERT OR IGNORE INTO queues (id, name, max_concurrent, speed_limit_kbps, is_active, schedule_start, schedule_stop, created_at, on_complete_action)
+             VALUES ('night', 'Night Queue', 1, 0, 0, '01:00', '07:00', ?1, 'none')",
             params![now as i64],
         )?;
 
@@ -405,7 +419,7 @@ impl Database {
     pub fn get_all_queues(&self) -> Result<Vec<QueueRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, max_concurrent, speed_limit_kbps, is_active, schedule_start, schedule_stop, created_at
+            "SELECT id, name, max_concurrent, speed_limit_kbps, is_active, schedule_start, schedule_stop, created_at, on_complete_action
              FROM queues ORDER BY created_at ASC",
         )?;
 
@@ -420,6 +434,7 @@ impl Database {
                 schedule_start: row.get(5)?,
                 schedule_stop: row.get(6)?,
                 created_at: row.get::<_, i64>(7)? as u64,
+                on_complete_action: row.get(8).unwrap_or(Some("none".to_string())),
             })
         })?;
 
@@ -433,7 +448,7 @@ impl Database {
     pub fn get_queue(&self, id: &str) -> Result<Option<QueueRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, max_concurrent, speed_limit_kbps, is_active, schedule_start, schedule_stop, created_at
+            "SELECT id, name, max_concurrent, speed_limit_kbps, is_active, schedule_start, schedule_stop, created_at, on_complete_action
              FROM queues WHERE id = ?1",
         )?;
 
@@ -449,6 +464,7 @@ impl Database {
                 schedule_start: row.get(5)?,
                 schedule_stop: row.get(6)?,
                 created_at: row.get::<_, i64>(7)? as u64,
+                on_complete_action: row.get(8).unwrap_or(Some("none".to_string())),
             }))
         } else {
             Ok(None)
@@ -459,8 +475,8 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO queues (
-                id, name, max_concurrent, speed_limit_kbps, is_active, schedule_start, schedule_stop, created_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                id, name, max_concurrent, speed_limit_kbps, is_active, schedule_start, schedule_stop, created_at, on_complete_action
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 q.id,
                 q.name,
@@ -470,6 +486,7 @@ impl Database {
                 q.schedule_start,
                 q.schedule_stop,
                 q.created_at as i64,
+                q.on_complete_action.as_deref().unwrap_or("none"),
             ],
         )?;
         Ok(())

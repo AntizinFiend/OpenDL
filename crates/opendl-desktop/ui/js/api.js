@@ -455,3 +455,80 @@ export async function getDiskFree(path) {
   }
   return null;
 }
+
+export async function listQueues() {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("list_queues");
+    } catch (e) {
+      console.warn("list_queues error:", e);
+    }
+  }
+  return [];
+}
+
+export async function createQueue(name, maxConcurrent = 2) {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("create_queue", { name, maxConcurrent });
+    } catch (e) {
+      console.warn("create_queue error:", e);
+    }
+  }
+  return null;
+}
+
+export async function updateQueue(queue) {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("update_queue", { queue });
+    } catch (e) {
+      console.warn("update_queue error:", e);
+    }
+  }
+  return false;
+}
+
+export async function startQueue(id) {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("start_queue", { id });
+    } catch (e) {
+      console.warn("start_queue error:", e);
+    }
+  }
+  return false;
+}
+
+export async function pauseQueue(id) {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("pause_queue", { id });
+    } catch (e) {
+      console.warn("pause_queue error:", e);
+    }
+  }
+  return false;
+}
+
+export async function abortShutdown() {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("abort_shutdown");
+    } catch (e) {
+      console.warn("abort_shutdown error:", e);
+    }
+  }
+  return false;
+}
+
+export async function triggerPowerAction(action) {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("trigger_power_action", { action });
+    } catch (e) {
+      console.warn("trigger_power_action error:", e);
+    }
+  }
+  return false;
+}

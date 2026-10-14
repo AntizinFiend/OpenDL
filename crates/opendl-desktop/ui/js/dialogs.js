@@ -16,7 +16,11 @@ import {
   detectCategoryFromFilename,
   openPath,
   showInFolder,
-  selectFolder
+  selectFolder,
+  createQueue,
+  updateQueue,
+  abortShutdown,
+  listQueues
 } from "./api.js";
 
 const THEMES = [
@@ -66,6 +70,38 @@ export function openSettingsDialog() {
   playPiezo("snap");
   backdrop.classList.remove("is-hidden");
   decodeTitleEffect(titleEl, "SYSTEM CONFIGURATION");
+}
+
+export function openQueueDialog(queueRecord = null) {
+  const backdrop = document.getElementById("dialog-queue-backdrop");
+  const editId = document.getElementById("queue-edit-id");
+  const nameInput = document.getElementById("queue-name");
+  const maxConns = document.getElementById("queue-max-concurrent");
+  const speedLimit = document.getElementById("queue-speed-limit");
+  const onFinish = document.getElementById("queue-on-finish");
+  const titleEl = document.getElementById("dialog-queue-title");
+
+  if (!backdrop) return;
+
+  if (queueRecord) {
+    if (editId) editId.value = queueRecord.id || "";
+    if (nameInput) nameInput.value = queueRecord.name || "";
+    if (maxConns) maxConns.value = queueRecord.max_concurrent || 2;
+    if (speedLimit) speedLimit.value = queueRecord.speed_limit_kbps || 0;
+    if (onFinish) onFinish.value = queueRecord.on_complete_action || "none";
+    decodeTitleEffect(titleEl, "EDIT QUEUE CONFIGURATION");
+  } else {
+    if (editId) editId.value = "";
+    if (nameInput) nameInput.value = `Queue 0${store.queues.length + 1}`;
+    if (maxConns) maxConns.value = 2;
+    if (speedLimit) speedLimit.value = 0;
+    if (onFinish) onFinish.value = "none";
+    decodeTitleEffect(titleEl, "NEW QUEUE CONFIGURATION");
+  }
+
+  playPiezo("snap");
+  backdrop.classList.remove("is-hidden");
+  nameInput?.focus();
 }
 
 function renderThemePicker(grid) {
@@ -308,6 +344,48 @@ export function initDialogs(onTasksAdded) {
   document.getElementById("btn-clipboard-dismiss")?.addEventListener("click", () => {
     banner?.classList.add("is-hidden");
     store.dismissedClipboardUrl = currentClipUrl;
+  });
+
+  document.getElementById("btn-save-queue")?.addEventListener("click", async () => {
+    const editId = document.getElementById("queue-edit-id")?.value;
+    const name = document.getElementById("queue-name")?.value.trim();
+    const maxConns = parseInt(document.getElementById("queue-max-concurrent")?.value || "2", 10);
+    const speedLimit = parseInt(document.getElementById("queue-speed-limit")?.value || "0", 10);
+    const onFinish = document.getElementById("queue-on-finish")?.value || "none";
+
+    if (!name) return;
+
+    if (editId) {
+      await updateQueue({
+        id: editId,
+        name,
+        max_concurrent: maxConns,
+        speed_limit_kbps: speedLimit,
+        is_active: true,
+        schedule_start: null,
+        schedule_stop: null,
+        created_at: Date.now(),
+        on_complete_action: onFinish,
+      });
+    } else {
+      const q = await createQueue(name, maxConns);
+      if (q) {
+        q.speed_limit_kbps = speedLimit;
+        q.on_complete_action = onFinish;
+        await updateQueue(q);
+      }
+    }
+
+    playPiezo("thud");
+    document.getElementById("dialog-queue-backdrop")?.classList.add("is-hidden");
+    await onTasksAdded?.();
+    notify("view");
+  });
+
+  document.getElementById("btn-abort-shutdown")?.addEventListener("click", async () => {
+    await abortShutdown();
+    document.getElementById("shutdown-countdown-banner")?.classList.add("is-hidden");
+    playPiezo("snap");
   });
 
   window.addEventListener("click", () => hideContextMenu());

@@ -31,6 +31,7 @@ pub struct IpcResponse {
     pub task_id: Option<Uuid>,
     pub message: Option<String>,
     pub tasks: Option<Vec<TaskRecord>>,
+    pub queues: Option<Vec<crate::db::QueueRecord>>,
 }
 
 impl IpcResponse {
@@ -40,6 +41,7 @@ impl IpcResponse {
             task_id: None,
             message: Some(msg.into()),
             tasks: None,
+            queues: None,
         }
     }
 
@@ -49,6 +51,7 @@ impl IpcResponse {
             task_id: Some(task_id),
             message: Some(msg.into()),
             tasks: None,
+            queues: None,
         }
     }
 
@@ -58,6 +61,17 @@ impl IpcResponse {
             task_id: None,
             message: None,
             tasks: Some(tasks),
+            queues: None,
+        }
+    }
+
+    pub fn ok_with_queues(queues: Vec<crate::db::QueueRecord>) -> Self {
+        Self {
+            status: "ok".to_string(),
+            task_id: None,
+            message: None,
+            tasks: None,
+            queues: Some(queues),
         }
     }
 
@@ -67,6 +81,7 @@ impl IpcResponse {
             task_id: None,
             message: Some(msg.into()),
             tasks: None,
+            queues: None,
         }
     }
 }
