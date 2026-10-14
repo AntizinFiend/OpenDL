@@ -30,14 +30,21 @@ impl DownloadManager {
         let dir = download_dir.unwrap_or_else(dirs_or_default_download_dir);
         let _ = std::fs::create_dir_all(&dir);
 
-        let proc = Aria2Process::spawn(None, Some(&dir))
-            .expect("Failed to spawn aria2c background sidecar");
-        let client = proc.client();
+        let (proc_opt, client) = match Aria2Process::spawn(None, Some(&dir)) {
+            Ok(p) => {
+                let client = p.client();
+                (Some(p), client)
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to spawn aria2c sidecar. Using fallback RPC port 6800");
+                (None, Aria2Client::new(6800, String::new()))
+            }
+        };
 
         let mgr = Self {
             db,
             default_download_dir: dir,
-            _aria2_proc: Arc::new(Mutex::new(Some(proc))),
+            _aria2_proc: Arc::new(Mutex::new(proc_opt)),
             aria2_client: client,
             active_tasks: Arc::new(Mutex::new(HashMap::new())),
             gid_to_task: Arc::new(Mutex::new(HashMap::new())),
@@ -187,9 +194,19 @@ impl DownloadManager {
 
         if let Some(gid) = gid {
             let client = self.aria2_client.clone();
-            tokio::spawn(async move {
-                let _ = client.pause(&gid).await;
-            });
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    let _ = client.pause(&gid).await;
+                });
+            } else {
+                std::thread::spawn(move || {
+                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                        rt.block_on(async move {
+                            let _ = client.pause(&gid).await;
+                        });
+                    }
+                });
+            }
             let _ = self.db.update_task_progress(task_id, 0, TaskStatus::Paused);
             true
         } else {
@@ -242,9 +259,19 @@ impl DownloadManager {
 
         if let Some(gid) = gid {
             let client = self.aria2_client.clone();
-            tokio::spawn(async move {
-                let _ = client.remove(&gid).await;
-            });
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    let _ = client.remove(&gid).await;
+                });
+            } else {
+                std::thread::spawn(move || {
+                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                        rt.block_on(async move {
+                            let _ = client.remove(&gid).await;
+                        });
+                    }
+                });
+            }
         }
 
         if let Ok(Some(record)) = self.db.get_task(task_id) {
@@ -316,106 +343,116 @@ impl DownloadManager {
         let progress_cache = self.progress_cache.clone();
         let last_db_save = self.last_db_save.clone();
 
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_millis(200));
+        std::thread::Builder::new()
+            .name("opendl-telemetry".to_string())
+            .spawn(move || {
+                if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    rt.block_on(async move {
+                        let mut interval = tokio::time::interval(Duration::from_millis(200));
 
-            loop {
-                interval.tick().await;
+                        loop {
+                            interval.tick().await;
 
-                // 1. Poll active downloads
-                if let Ok(active) = client.tell_active().await {
-                    for status in active {
-                        let task_id = {
-                            let gt = gid_to_task.lock();
-                            gt.get(&status.gid).cloned()
-                        };
+                            // 1. Poll active downloads
+                            if let Ok(active) = client.tell_active().await {
+                                for status in active {
+                                    let task_id = {
+                                        let gt = gid_to_task.lock();
+                                        gt.get(&status.gid).cloned()
+                                    };
 
-                        if let Some(id) = task_id {
-                            let progress = status.to_download_progress();
-                            let dl = progress.downloaded_bytes;
+                                    if let Some(id) = task_id {
+                                        let progress = status.to_download_progress();
+                                        let dl = progress.downloaded_bytes;
 
-                            // Update in-memory telemetry cache for high-frequency UI rendering
-                            {
-                                let mut pc = progress_cache.lock();
-                                pc.insert(id, progress);
-                            }
+                                        // Update in-memory telemetry cache for high-frequency UI rendering
+                                        {
+                                            let mut pc = progress_cache.lock();
+                                            pc.insert(id, progress);
+                                        }
 
-                            // Throttled DB persistence (at least 256KB change)
-                            let should_save = {
-                                let mut saves = last_db_save.lock();
-                                let last = saves.get(&id).cloned().unwrap_or(0);
-                                if dl.saturating_sub(last) > 256 * 1024 {
-                                    saves.insert(id, dl);
-                                    true
-                                } else {
-                                    false
-                                }
-                            };
-
-                            if should_save {
-                                let _ = db.update_task_progress(id, dl, TaskStatus::Downloading);
-                            }
-                        }
-                    }
-                }
-
-                // 2. Poll stopped / completed / error downloads
-                if let Ok(stopped) = client.tell_stopped(0, 50).await {
-                    for status in stopped {
-                        let task_id = {
-                            let gt = gid_to_task.lock();
-                            gt.get(&status.gid).cloned()
-                        };
-
-                        if let Some(id) = task_id {
-                            let is_complete = status.status == "complete";
-                            let dl: u64 = status.completed_length.parse().unwrap_or(0);
-
-                            if is_complete {
-                                info!(task_id = %id, gid = %status.gid, "Task marked complete in aria2");
-                                let _ = db.update_task_progress(id, dl, TaskStatus::Completed);
-                                {
-                                    let mut pc = progress_cache.lock();
-                                    if let Some(p) = pc.get_mut(&id) {
-                                        p.is_complete = true;
-                                        p.downloaded_bytes = dl;
-                                        p.speed_bytes_per_sec = 0.0;
-                                        p.active_connections = 0;
-                                    }
-                                }
-
-                                // Check if queue finished and execute power action if configured
-                                if let Ok(Some(task)) = db.get_task(id) {
-                                    if let Ok(active_in_queue) = db.count_downloading_tasks_in_queue(&task.queue_id) {
-                                        if active_in_queue == 0 {
-                                            if let Ok(Some(q)) = db.get_queue(&task.queue_id) {
-                                                if let Some(ref action) = q.on_complete_action {
-                                                    if action != "none" {
-                                                        info!(queue = %q.name, action = %action, "Queue completed! Executing power action");
-                                                        let _ = trigger_power_action(action);
-                                                    }
-                                                }
+                                        // Throttled DB persistence (at least 256KB change)
+                                        let should_save = {
+                                            let mut saves = last_db_save.lock();
+                                            let last = saves.get(&id).cloned().unwrap_or(0);
+                                            if dl.saturating_sub(last) > 256 * 1024 {
+                                                saves.insert(id, dl);
+                                                true
+                                            } else {
+                                                false
                                             }
+                                        };
+
+                                        if should_save {
+                                            let _ = db.update_task_progress(id, dl, TaskStatus::Downloading);
                                         }
                                     }
                                 }
-                            } else if status.status == "error" {
-                                warn!(task_id = %id, gid = %status.gid, err = ?status.error_message, "Task marked failed in aria2");
-                                let _ = db.update_task_progress(id, dl, TaskStatus::Failed);
                             }
 
-                            // Clean up active mappings
-                            {
-                                let mut at = active_tasks.lock();
-                                let mut gt = gid_to_task.lock();
-                                at.remove(&id);
-                                gt.remove(&status.gid);
+                            // 2. Poll stopped / completed / error downloads
+                            if let Ok(stopped) = client.tell_stopped(0, 50).await {
+                                for status in stopped {
+                                    let task_id = {
+                                        let gt = gid_to_task.lock();
+                                        gt.get(&status.gid).cloned()
+                                    };
+
+                                    if let Some(id) = task_id {
+                                        let is_complete = status.status == "complete";
+                                        let dl: u64 = status.completed_length.parse().unwrap_or(0);
+
+                                        if is_complete {
+                                            info!(task_id = %id, gid = %status.gid, "Task marked complete in aria2");
+                                            let _ = db.update_task_progress(id, dl, TaskStatus::Completed);
+                                            {
+                                                let mut pc = progress_cache.lock();
+                                                if let Some(p) = pc.get_mut(&id) {
+                                                    p.is_complete = true;
+                                                    p.downloaded_bytes = dl;
+                                                    p.speed_bytes_per_sec = 0.0;
+                                                    p.active_connections = 0;
+                                                }
+                                            }
+
+                                            // Check if queue finished and execute power action if configured
+                                            if let Ok(Some(task)) = db.get_task(id) {
+                                                if let Ok(active_in_queue) = db.count_downloading_tasks_in_queue(&task.queue_id) {
+                                                    if active_in_queue == 0 {
+                                                        if let Ok(Some(q)) = db.get_queue(&task.queue_id) {
+                                                            if let Some(ref action) = q.on_complete_action {
+                                                                if action != "none" {
+                                                                    info!(queue = %q.name, action = %action, "Queue completed! Executing power action");
+                                                                    let _ = trigger_power_action(action);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        } else if status.status == "error" {
+                                            warn!(task_id = %id, gid = %status.gid, err = ?status.error_message, "Task marked failed in aria2");
+                                            let _ = db.update_task_progress(id, dl, TaskStatus::Failed);
+                                        }
+
+                                        // Clean up active mappings
+                                        {
+                                            let mut at = active_tasks.lock();
+                                            let mut gt = gid_to_task.lock();
+                                            at.remove(&id);
+                                            gt.remove(&status.gid);
+                                        }
+                                    }
+                                }
                             }
                         }
-                    }
+                    });
                 }
-            }
-        });
+            })
+            .ok();
     }
 
     pub fn start_scheduler(self: &Arc<Self>) {

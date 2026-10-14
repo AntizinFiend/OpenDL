@@ -404,11 +404,28 @@ fn main() {
 }
 
 fn run_app() -> Result<()> {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .try_init();
+    let log_file = if let Ok(appdata) = std::env::var("APPDATA") {
+        let log_dir = PathBuf::from(appdata).join("OpenDL");
+        let _ = std::fs::create_dir_all(&log_dir);
+        std::fs::File::create(log_dir.join("app.log")).ok()
+    } else {
+        None
+    };
+
+    if let Some(file) = log_file {
+        let _ = tracing_subscriber::fmt()
+            .with_writer(std::sync::Mutex::new(file))
+            .with_env_filter(
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+            )
+            .try_init();
+    } else {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+            )
+            .try_init();
+    }
 
     info!("Starting OpenDL Desktop Application");
 
