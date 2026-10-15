@@ -132,6 +132,8 @@ async function refreshTaskList() {
     store.focusedRowId = active.id;
   }
   notify("tasks");
+}
+
 async function checkPendingIntercepts() {
   try {
     const pending = await getPendingIntercepts();
@@ -400,11 +402,13 @@ async function initApp() {
 initApp();
 
 // Extension Interception Listeners
-window.__onBrowserDownloadRequest = (payload) => {
-  if (payload && payload.url) {
-    openAddDialog(payload.url, payload.filename || "");
-  }
-};
+if (typeof window !== "undefined") {
+  window.__onBrowserDownloadRequest = (payload) => {
+    if (payload && payload.url) {
+      openAddDialog(payload.url, payload.filename || "");
+    }
+  };
+}
 
 if (typeof window !== "undefined" && window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen("browser_download_request", (event) => {
