@@ -20,15 +20,15 @@ function updateRangeShiftBadge(newCeiling) {
 
   if (previousCeiling > 0 && Math.abs(newCeiling - previousCeiling) / previousCeiling > 0.15) {
     const oldSp = formatSpeedParts(previousCeiling);
-    badge.textContent = `RANGE SHIFT // ${oldSp.value} ${oldSp.unit} -> ${curSp.value} ${curSp.unit}`;
+    badge.textContent = `Scale: ${oldSp.value} ${oldSp.unit} -> ${curSp.value} ${curSp.unit}`;
     badge.classList.add("is-shifting");
     clearTimeout(rangeShiftTimer);
     rangeShiftTimer = setTimeout(() => {
       badge.classList.remove("is-shifting");
-      badge.textContent = `LOCKED // ${curSp.value} ${curSp.unit}`;
+      badge.textContent = `Scale: ${curSp.value} ${curSp.unit}`;
     }, 900);
   } else if (!badge.classList.contains("is-shifting")) {
-    badge.textContent = `LOCKED // ${curSp.value} ${curSp.unit}`;
+    badge.textContent = `Scale: ${curSp.value} ${curSp.unit}`;
   }
   previousCeiling = newCeiling;
 }

@@ -68,66 +68,52 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // 3. Browser Download Interception: Determining Filename (Canonical Chromium hook)
-if (chrome.downloads.onDeterminingFilename) {
-  chrome.downloads.onDeterminingFilename.addListener(async (item, suggest) => {
-    const res = await chrome.storage.local.get(["intercept_enabled"]);
-    const enabled = res.intercept_enabled !== false;
-    if (!enabled) return;
+if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
+  chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+    chrome.storage.local.get(["intercept_enabled"], async (res) => {
+      const enabled = res.intercept_enabled !== false;
+      if (!enabled) {
+        suggest();
+        return;
+      }
 
-    const url = item.finalUrl || item.url;
-    if (!url || url.startsWith("blob:") || url.startsWith("data:")) return;
+      const url = item.finalUrl || item.url;
+      if (!url || url.startsWith("blob:") || url.startsWith("data:")) {
+        suggest();
+        return;
+      }
 
-    if (interceptedDownloadIds.has(item.id)) return;
-    interceptedDownloadIds.add(item.id);
+      if (interceptedDownloadIds.has(item.id)) {
+        suggest();
+        return;
+      }
+      interceptedDownloadIds.add(item.id);
 
-    try {
-      chrome.downloads.cancel(item.id, () => {
-        chrome.downloads.erase({ id: item.id });
+      // Cancel the browser's internal download
+      try {
+        chrome.downloads.cancel(item.id, () => {
+          chrome.downloads.erase({ id: item.id });
+        });
+      } catch (_) {}
+
+      // Tell Chrome filename determination is complete (canceled)
+      suggest();
+
+      const cookies = await getCookiesForUrl(url);
+      triggerOpenDlDownload({
+        action: "download",
+        url: url,
+        filename: item.filename || undefined,
+        referrer: item.referrer || "",
+        cookies: cookies,
+        user_agent: navigator.userAgent,
+        total_size: (item.fileSize && item.fileSize > 0) ? item.fileSize : undefined
       });
-    } catch (_) {}
-
-    const cookies = await getCookiesForUrl(url);
-    triggerOpenDlDownload({
-      action: "download",
-      url: url,
-      filename: item.filename || undefined,
-      referrer: item.referrer || "",
-      cookies: cookies,
-      user_agent: navigator.userAgent,
-      total_size: (item.fileSize && item.fileSize > 0) ? item.fileSize : undefined
     });
+
+    return true; // Asynchronous suggest callback
   });
 }
-
-// 4. Browser Download Interception: onCreated (Fallback)
-chrome.downloads.onCreated.addListener(async (item) => {
-  const res = await chrome.storage.local.get(["intercept_enabled"]);
-  const enabled = res.intercept_enabled !== false;
-  if (!enabled) return;
-
-  const url = item.finalUrl || item.url;
-  if (!url || url.startsWith("blob:") || url.startsWith("data:")) return;
-
-  if (interceptedDownloadIds.has(item.id)) return;
-  interceptedDownloadIds.add(item.id);
-
-  try {
-    chrome.downloads.cancel(item.id, () => {
-      chrome.downloads.erase({ id: item.id });
-    });
-  } catch (_) {}
-
-  const cookies = await getCookiesForUrl(url);
-  triggerOpenDlDownload({
-    action: "download",
-    url: url,
-    filename: item.filename || undefined,
-    referrer: item.referrer || "",
-    cookies: cookies,
-    user_agent: navigator.userAgent,
-    total_size: (item.fileSize && item.fileSize > 0) ? item.fileSize : undefined
-  });
-});
 
 async function getCookiesForUrl(url) {
   try {

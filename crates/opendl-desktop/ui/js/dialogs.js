@@ -31,7 +31,9 @@ const THEMES = [
   { id: "blueprint", name: "Blueprint", bg: "#0B1624", accent: "#4FB8F0" }
 ];
 
-export function openAddDialog(prefillUrl = "") {
+let onTaskChangedCallback = null;
+
+export function openAddDialog(prefillUrl = "", prefillFilename = "") {
   const backdrop = document.getElementById("dialog-add-backdrop");
   const urlsInput = document.getElementById("input-urls");
   const nameInput = document.getElementById("input-filename");
@@ -42,7 +44,10 @@ export function openAddDialog(prefillUrl = "") {
   if (!backdrop) return;
   queueSelect.innerHTML = store.queues.map((q) => `<option value="${q}">${q}</option>`).join("");
   urlsInput.value = prefillUrl;
-  if (prefillUrl) {
+  if (prefillFilename) {
+    nameInput.value = prefillFilename;
+    catSelect.value = detectCategoryFromFilename(prefillFilename);
+  } else if (prefillUrl) {
     const firstLine = prefillUrl.split(/\r?\n/).find((l) => l.trim());
     const fn = detectFilenameFromUrl(firstLine);
     nameInput.value = fn;
@@ -185,8 +190,10 @@ export function showContextMenu(x, y, taskId) {
 
     if (act === "pause") {
       for (const id of ids) await pauseTask(id);
+      if (onTaskChangedCallback) await onTaskChangedCallback();
     } else if (act === "resume" || act === "retry") {
       for (const id of ids) await resumeTask(id);
+      if (onTaskChangedCallback) await onTaskChangedCallback();
     } else if (act === "open") {
       if (task.destination) await openPath(task.destination);
     } else if (act === "folder") {
@@ -198,11 +205,17 @@ export function showContextMenu(x, y, taskId) {
         await deleteTask(id, false);
         store.selectedIds.delete(id);
       }
+      store.tasks = store.tasks.filter((t) => !ids.includes(t.id));
+      for (const id of ids) store.taskMap.delete(id);
+      if (onTaskChangedCallback) await onTaskChangedCallback();
     } else if (act === "delete-disk") {
       for (const id of ids) {
         await deleteTask(id, true);
         store.selectedIds.delete(id);
       }
+      store.tasks = store.tasks.filter((t) => !ids.includes(t.id));
+      for (const id of ids) store.taskMap.delete(id);
+      if (onTaskChangedCallback) await onTaskChangedCallback();
     }
     notify("tasks");
   };
@@ -213,6 +226,7 @@ export function hideContextMenu() {
 }
 
 export function initDialogs(onTasksAdded) {
+  onTaskChangedCallback = onTasksAdded;
   document.querySelectorAll("[data-close-modal]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-close-modal");

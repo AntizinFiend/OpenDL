@@ -8,7 +8,8 @@ import {
   windowMinimize,
   windowToggleMaximize,
   windowClose,
-  getDiskFree
+  getDiskFree,
+  getPendingIntercepts
 } from "./api.js";
 import {
   store,
@@ -281,6 +282,17 @@ async function initApp() {
   document.getElementById("btn-empty-add")?.addEventListener("click", () => openAddDialog());
   document.getElementById("btn-resume-all")?.addEventListener("click", () => executeAction("resume-all"));
   document.getElementById("btn-pause-all")?.addEventListener("click", () => executeAction("pause-all"));
+  document.getElementById("btn-delete-selected")?.addEventListener("click", async () => {
+    if (store.selectedIds.size === 0) return;
+    const ids = Array.from(store.selectedIds);
+    for (const id of ids) {
+      await deleteTask(id, false);
+      store.selectedIds.delete(id);
+    }
+    store.tasks = store.tasks.filter((t) => !ids.includes(t.id));
+    for (const id of ids) store.taskMap.delete(id);
+    await refreshTaskList();
+  });
 
   // Global keyboard shortcuts
   window.addEventListener("keydown", async (e) => {
@@ -307,6 +319,8 @@ async function initApp() {
         await deleteTask(id, e.shiftKey);
         store.selectedIds.delete(id);
       }
+      store.tasks = store.tasks.filter((t) => !ids.includes(t.id));
+      for (const id of ids) store.taskMap.delete(id);
       await refreshTaskList();
     } else if (e.key === "Escape") {
       closeAllDialogs();
@@ -332,6 +346,19 @@ async function initApp() {
   await pollProgressTick();
   updateStorageEstimate();
 
+  // Process any downloads intercepted before window finish loaded
+  try {
+    const pending = await getPendingIntercepts();
+    if (pending && pending.length > 0) {
+      const first = pending[0];
+      if (first.url) {
+        openAddDialog(first.url, first.filename || "");
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to check pending intercepts:", err);
+  }
+
   setTimeout(() => {
     launchInitActive = false;
     renderStatusBar(store.tasks.reduce((acc, t) => acc + (t.speed || 0), 0));
@@ -350,7 +377,7 @@ initApp();
 if (typeof window !== "undefined" && window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen("browser_download_request", (event) => {
     if (event.payload && event.payload.url) {
-      openAddDialog(event.payload.url);
+      openAddDialog(event.payload.url, event.payload.filename || "");
     }
   });
 }

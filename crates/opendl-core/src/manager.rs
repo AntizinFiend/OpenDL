@@ -262,12 +262,14 @@ impl DownloadManager {
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 handle.spawn(async move {
                     let _ = client.remove(&gid).await;
+                    let _ = client.remove_download_result(&gid).await;
                 });
             } else {
                 std::thread::spawn(move || {
                     if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
                         rt.block_on(async move {
                             let _ = client.remove(&gid).await;
+                            let _ = client.remove_download_result(&gid).await;
                         });
                     }
                 });
@@ -374,11 +376,11 @@ impl DownloadManager {
                                             pc.insert(id, progress);
                                         }
 
-                                        // Throttled DB persistence (at least 256KB change)
+                                        // Throttled DB persistence (at least 2MB change to prevent SSD thrashing)
                                         let should_save = {
                                             let mut saves = last_db_save.lock();
                                             let last = saves.get(&id).cloned().unwrap_or(0);
-                                            if dl.saturating_sub(last) > 256 * 1024 {
+                                            if dl.saturating_sub(last) > 2 * 1024 * 1024 {
                                                 saves.insert(id, dl);
                                                 true
                                             } else {
@@ -438,13 +440,14 @@ impl DownloadManager {
                                             let _ = db.update_task_progress(id, dl, TaskStatus::Failed);
                                         }
 
-                                        // Clean up active mappings
+                                        // Clean up active mappings and remove stopped result from aria2
                                         {
                                             let mut at = active_tasks.lock();
                                             let mut gt = gid_to_task.lock();
                                             at.remove(&id);
                                             gt.remove(&status.gid);
                                         }
+                                        let _ = client.remove_download_result(&status.gid).await;
                                     }
                                 }
                             }

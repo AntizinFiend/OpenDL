@@ -532,3 +532,14 @@ export async function triggerPowerAction(action) {
   }
   return false;
 }
+
+export async function getPendingIntercepts() {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("get_pending_intercepts");
+    } catch (e) {
+      console.warn("get_pending_intercepts error:", e);
+    }
+  }
+  return [];
+}

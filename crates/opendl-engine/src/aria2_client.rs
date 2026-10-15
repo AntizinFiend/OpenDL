@@ -378,6 +378,18 @@ impl Aria2Client {
         self.call_rpc::<String>("aria2.changeGlobalOption", params).await
     }
 
+    /// Remove completed/error download result from aria2 memory
+    pub async fn remove_download_result(&self, gid: &str) -> Result<String> {
+        let params = json!([self.secret_param, gid]);
+        self.call_rpc::<String>("aria2.removeDownloadResult", params).await
+    }
+
+    /// Purge all completed/error download results from aria2 memory
+    pub async fn purge_download_result(&self) -> Result<String> {
+        let params = json!([self.secret_param]);
+        self.call_rpc::<String>("aria2.purgeDownloadResult", params).await
+    }
+
     /// Query version
     pub async fn get_version(&self) -> Result<String> {
         let params = json!([self.secret_param]);

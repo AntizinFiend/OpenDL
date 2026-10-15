@@ -90,14 +90,17 @@ async fn delete_task(
     delete_file: bool,
 ) -> Result<bool, String> {
     let task_id = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
-    if let Ok(Some(record)) = manager.db().get_task(task_id) {
-        if delete_file && record.destination.exists() {
-            let _ = std::fs::remove_file(&record.destination);
-        }
-    }
-    manager.pause_task(task_id);
-    manager.db().delete_task(task_id).map_err(|e| e.to_string())?;
+    manager.delete_task(task_id, delete_file).map_err(|e| e.to_string())?;
     Ok(true)
+}
+
+#[tauri::command]
+async fn get_pending_intercepts(
+    pending: State<'_, Arc<std::sync::Mutex<Vec<IpcMessage>>>>,
+) -> Result<Vec<IpcMessage>, String> {
+    let mut guard = pending.lock().map_err(|e| e.to_string())?;
+    let items = guard.drain(..).collect();
+    Ok(items)
 }
 
 #[tauri::command]
@@ -385,7 +388,19 @@ fn get_db_path() -> PathBuf {
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {
-        let msg = format!("PANIC: {:?}", info);
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            format!("{:?}", info.payload())
+        };
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+
+        let msg = format!("PANIC at [{}]: {}\n", location, payload);
         eprintln!("{}", msg);
         if let Ok(appdata) = std::env::var("APPDATA") {
             let path = PathBuf::from(appdata).join("OpenDL").join("crash.log");
@@ -439,9 +454,12 @@ fn run_app() -> Result<()> {
     // Spawn background Windows Named Pipe IPC server
     let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
     let manager_for_ipc = manager.clone();
+    let pending_intercepts = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let pending_for_ipc = pending_intercepts.clone();
 
     tauri::Builder::default()
         .manage(manager.clone())
+        .manage(pending_intercepts.clone())
         .setup(move |app| {
             // Ensure desktop windows are visible and focused
             for (_label, window) in app.webview_windows() {
@@ -456,6 +474,7 @@ fn run_app() -> Result<()> {
                 let handler = Arc::new(move |msg: IpcMessage| {
                     let h = handle.clone();
                     let mgr = mgr_ipc.clone();
+                    let pending_queue = pending_for_ipc.clone();
                     async move {
                         match msg.action.as_str() {
                             "add_download_direct" => {
@@ -530,7 +549,10 @@ fn run_app() -> Result<()> {
                                 IpcResponse::ok("Power action triggered")
                             }
                             _ => {
-                                // Default interception: Prompt in desktop UI dialog
+                                // Default interception: buffer in pending_intercepts and emit event
+                                if let Ok(mut pending) = pending_queue.lock() {
+                                    pending.push(msg.clone());
+                                }
                                 for (_label, window) in h.webview_windows() {
                                     let _ = window.unminimize();
                                     let _ = window.show();
@@ -556,6 +578,7 @@ fn run_app() -> Result<()> {
             pause_task,
             resume_task,
             delete_task,
+            get_pending_intercepts,
             get_all_progress,
             open_path,
             show_in_folder,
@@ -575,9 +598,13 @@ fn run_app() -> Result<()> {
             abort_shutdown,
             trigger_power_action,
         ])
+        .on_window_event(|window, event| {
+            info!(label = %window.label(), event = ?event, "Window event received");
+        })
         .run(tauri::generate_context!())
         .expect("Error while running Tauri application");
 
+    info!("Tauri run() finished and returned");
     let _ = shutdown_tx.send(());
     Ok(())
 }

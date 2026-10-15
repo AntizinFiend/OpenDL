@@ -38,17 +38,14 @@ document.addEventListener("click", (e) => {
   }
 
   if (isDownload) {
+    e.preventDefault();
+    e.stopPropagation();
+
     chrome.runtime.sendMessage({
       type: "PAGE_LINK_CLICKED",
       url: urlStr,
       suggestedFilename: filename,
       referrer: window.location.href
-    }, (response) => {
-      // If intercepted by OpenDL, prevent default navigation
-      if (response && response.intercepted) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
     });
   }
 }, true);

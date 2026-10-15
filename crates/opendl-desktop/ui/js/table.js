@@ -102,7 +102,7 @@ function renderHeaderIfNeeded(tableEl, headerEl, tasks) {
         { label: "#", cls: "th-select-cell" },
         { label: "NAME", cls: "th-cell" },
         { label: "SIZE", cls: "th-cell th-num" },
-        { label: "PROGRESS // TELEMETRY", cls: "th-cell" },
+        { label: "PROGRESS", cls: "th-cell" },
         { label: "SPEED", cls: "th-cell th-num" },
         { label: "ETA", cls: "th-cell th-num" },
         { label: "CATEGORY", cls: "th-cell" }
@@ -110,7 +110,7 @@ function renderHeaderIfNeeded(tableEl, headerEl, tasks) {
       downloading: [
         { label: "#", cls: "th-select-cell" },
         { label: "NAME", cls: "th-cell" },
-        { label: "SEGMENTED PROGRESS", cls: "th-cell" },
+        { label: "PROGRESS", cls: "th-cell" },
         { label: "SPEED", cls: "th-cell th-num" },
         { label: "ETA", cls: "th-cell th-num" }
       ],

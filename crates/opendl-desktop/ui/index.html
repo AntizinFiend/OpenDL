@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OpenDL // Telemetry Download Manager</title>
+  <title>OpenDL - Download Manager</title>
   <link rel="stylesheet" href="css/tokens.css" />
   <link rel="stylesheet" href="css/themes.css" />
   <link rel="stylesheet" href="css/base.css" />
@@ -15,7 +15,7 @@
       <div class="titlebar-brand" data-tauri-drag-region>
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-wordmark" data-tauri-drag-region>OPENDL</span>
-        <span class="brand-version" data-tauri-drag-region>REV 2.4 // TELEMETRY</span>
+        <span class="brand-version" data-tauri-drag-region>Download Manager</span>
       </div>
 
       <div class="titlebar-search-wrap">
@@ -25,7 +25,7 @@
           id="global-search"
           class="titlebar-search block-caret"
           type="text"
-          placeholder="FILTER TASKS BY NAME, URL, OR CATEGORY..."
+          placeholder="Search downloads by name, URL, or category..."
           autocomplete="off"
           spellcheck="false"
         />
@@ -62,13 +62,13 @@
         <div class="sidebar-scroll">
           <section class="nav-section" aria-labelledby="nav-heading-lib">
             <div class="nav-section-header">
-              <span id="nav-heading-lib" class="micro-label">LIBRARY</span>
+              <span id="nav-heading-lib" class="micro-label">DOWNLOADS</span>
             </div>
             <ul class="nav-list" role="list" id="nav-library">
               <li>
                 <button type="button" class="nav-item is-active" data-view="all" data-tooltip="All Tasks">
                   <span class="nav-icon" data-icon="layers"></span>
-                  <span class="nav-label">All Transfers</span>
+                  <span class="nav-label">All Downloads</span>
                   <span class="nav-count" data-count-for="all">0</span>
                 </button>
               </li>
@@ -151,9 +151,9 @@
         </div>
 
         <div class="sidebar-footer">
-          <button id="btn-sidebar-toggle" class="sidebar-toggle-btn" type="button" data-tooltip="Toggle Sidebar Rail" aria-label="Toggle Sidebar">
+          <button id="btn-sidebar-toggle" class="sidebar-toggle-btn" type="button" data-tooltip="Toggle Sidebar" aria-label="Toggle Sidebar">
             <span class="nav-icon" data-icon="panelLeft"></span>
-            <span class="nav-label micro-label">COLLAPSE RAIL</span>
+            <span class="nav-label micro-label">COLLAPSE SIDEBAR</span>
           </button>
         </div>
       </aside>
@@ -164,7 +164,7 @@
           <button id="btn-abort-shutdown" class="btn btn-ghost btn-xs" type="button">ABORT SHUTDOWN</button>
         </div>
 
-        <section class="toolbar" aria-label="Transfer Controls and Telemetry">
+        <section class="toolbar" aria-label="Download Controls">
           <div class="toolbar-left">
             <button id="btn-add-download" class="btn btn-primary" type="button">
               <span data-icon="plus"></span>
@@ -179,13 +179,17 @@
               <span data-icon="pause"></span>
               <span>Pause all</span>
             </button>
+            <button id="btn-delete-selected" class="btn btn-ghost" type="button" title="Delete selected downloads (Delete)">
+              <span data-icon="trash"></span>
+              <span>Delete</span>
+            </button>
           </div>
 
           <button
             id="throughput-widget"
             class="throughput-module reg-panel"
             type="button"
-            aria-label="Open Throughput Telemetry Dock"
+            aria-label="Open Speed and Connections Panel"
           >
             <span class="reg-mark reg-tl" aria-hidden="true"></span>
             <span class="reg-mark reg-tr" aria-hidden="true"></span>
@@ -194,7 +198,7 @@
             <div class="throughput-meta">
               <div class="throughput-header">
                 <span id="widget-led" class="status-led" data-state="idle"></span>
-                <span class="micro-label">BUS THROUGHPUT</span>
+                <span class="micro-label">DOWNLOAD SPEED</span>
               </div>
               <div class="throughput-readout">
                 <span id="widget-speed-val" class="display-readout">0.0</span>
@@ -243,8 +247,8 @@
                 <span class="reg-mark reg-tr" aria-hidden="true"></span>
                 <span class="reg-mark reg-bl" aria-hidden="true"></span>
                 <span class="reg-mark reg-br" aria-hidden="true"></span>
-                <h2 id="empty-title" class="panel-title">NO ACTIVE TRANSFERS IN CHANNEL</h2>
-                <p id="empty-desc" class="empty-desc">Dispatch a new HTTP/HTTPS resource URI to initialize segmented telemetry capture.</p>
+                <h2 id="empty-title" class="panel-title">No Downloads Yet</h2>
+                <p id="empty-desc" class="empty-desc">Add a URL or download link to start downloading.</p>
                 <div class="empty-actions">
                   <button id="btn-empty-add" class="btn btn-primary" type="button">
                     <span data-icon="plus"></span>
@@ -252,21 +256,21 @@
                   </button>
                 </div>
                 <div class="empty-hints">
-                  <span class="micro-label">NEW TASK <kbd class="keycap">CTRL+N</kbd></span>
-                  <span class="micro-label">PASTE URI <kbd class="keycap">CTRL+V</kbd></span>
+                  <span class="micro-label">New Download <kbd class="keycap">CTRL+N</kbd></span>
+                  <span class="micro-label">Paste URL <kbd class="keycap">CTRL+V</kbd></span>
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        <section id="dock-panel" class="dock-panel reg-panel is-collapsed" aria-label="Telemetry Inspector Dock">
+        <section id="dock-panel" class="dock-panel reg-panel is-collapsed" aria-label="Details and Inspector Panel">
           <span class="reg-mark reg-tl" aria-hidden="true"></span>
           <span class="reg-mark reg-tr" aria-hidden="true"></span>
           <span class="reg-mark reg-bl" aria-hidden="true"></span>
           <span class="reg-mark reg-br" aria-hidden="true"></span>
 
-          <div id="dock-resize-handle" class="dock-resize-handle" role="separator" aria-orientation="horizontal" aria-label="Resize telemetry dock"></div>
+          <div id="dock-resize-handle" class="dock-resize-handle" role="separator" aria-orientation="horizontal" aria-label="Resize panel"></div>
 
           <header id="dock-header" class="dock-header">
             <div class="dock-tabs" role="tablist" aria-label="Inspector Tabs">
@@ -279,7 +283,7 @@
                 aria-controls="tab-panel-segments"
                 data-tab="segments"
               >
-                SEGMENTS
+                CONNECTIONS
               </button>
               <button
                 id="tab-btn-throughput"
@@ -290,7 +294,7 @@
                 aria-controls="tab-panel-throughput"
                 data-tab="throughput"
               >
-                THROUGHPUT
+                SPEED GRAPH
               </button>
               <button
                 id="tab-btn-wire"
@@ -301,12 +305,12 @@
                 aria-controls="tab-panel-wire"
                 data-tab="wire"
               >
-                PROTOCOL // WIRE
+                CONNECTION LOGS
               </button>
             </div>
 
             <div class="dock-header-right">
-              <span id="dock-title-decode" class="panel-title dock-panel-title" data-decode="SEGMENT TELEMETRY">SEGMENT TELEMETRY</span>
+              <span id="dock-title-decode" class="panel-title dock-panel-title" data-decode="CONNECTIONS">CONNECTIONS</span>
               <button id="btn-dock-close" class="icon-btn-sm" type="button" data-tooltip="Toggle Dock" aria-label="Close or toggle dock">
                 <span data-icon="chevronDown"></span>
               </button>
@@ -319,13 +323,13 @@
                 <div class="segments-task-identity">
                   <span id="seg-task-led" class="status-led" data-state="idle"></span>
                   <span id="seg-task-state-word" class="micro-label">IDLE</span>
-                  <span id="seg-task-name" class="seg-task-name">Select a task to inspect byte allocation</span>
-                  <button id="btn-clear-solo" class="btn btn-ghost btn-xs is-hidden" type="button">SOLO ACTIVE // CLEAR</button>
+                  <span id="seg-task-name" class="seg-task-name">Select a download to inspect connections</span>
+                  <button id="btn-clear-solo" class="btn btn-ghost btn-xs is-hidden" type="button">CLEAR FILTER</button>
                 </div>
 
-                <div class="seg-mode-switch" role="group" aria-label="Segment visualization mode">
-                  <button type="button" class="seg-mode-btn is-active" data-seg-mode="lanes">LANES</button>
-                  <button type="button" class="seg-mode-btn" data-seg-mode="matrix">SECTOR MAP</button>
+                <div class="seg-mode-switch" role="group" aria-label="Connection visualization mode">
+                  <button type="button" class="seg-mode-btn is-active" data-seg-mode="lanes">BARS</button>
+                  <button type="button" class="seg-mode-btn" data-seg-mode="matrix">GRID</button>
                 </div>
 
                 <div class="spec-grid">
@@ -340,7 +344,7 @@
                     <span id="spec-downloaded" class="spec-val">--</span>
                   </div>
                   <div class="spec-row">
-                    <span class="micro-label">VELOCITY</span>
+                    <span class="micro-label">SPEED</span>
                     <span class="spec-leader" aria-hidden="true"></span>
                     <span id="spec-velocity" class="spec-val">--</span>
                   </div>
@@ -358,7 +362,7 @@
               </div>
 
               <div class="segments-bottom-spark">
-                <span class="micro-label">TASK VELOCITY TRACE</span>
+                <span class="micro-label">SPEED HISTORY</span>
                 <div class="task-spark-holder">
                   <canvas id="task-sparkline-canvas" height="24"></canvas>
                 </div>
@@ -369,23 +373,23 @@
               <div class="throughput-dock-header">
                 <div class="throughput-dock-readouts">
                   <div class="tp-main-speed">
-                    <span class="micro-label">CURRENT DOWNLINK</span>
+                    <span class="micro-label">CURRENT SPEED</span>
                     <div class="tp-speed-line">
                       <span id="dock-tp-current" class="display-readout">0.0</span>
                       <span id="dock-tp-unit" class="micro-unit">MB/S</span>
                     </div>
                   </div>
                   <div class="tp-peak-readout">
-                    <span class="micro-label">WINDOW PEAK</span>
+                    <span class="micro-label">PEAK SPEED</span>
                     <span id="dock-tp-peak" class="mono-val">0.0 MB/s</span>
                   </div>
                   <div class="tp-peak-readout">
-                    <span class="micro-label">CURSOR DELTA</span>
+                    <span class="micro-label">CURSOR SPEED</span>
                     <span id="dock-tp-delta" class="mono-val">--</span>
                   </div>
                   <div class="tp-peak-readout">
-                    <span class="micro-label">SCALE TELEMETRY</span>
-                    <span id="tp-range-shift-badge" class="range-shift-badge">LOCKED // 1.0 MB/S</span>
+                    <span class="micro-label">SCALE</span>
+                    <span id="tp-range-shift-badge" class="range-shift-badge">Auto: 1.0 MB/s</span>
                   </div>
                 </div>
 
@@ -404,22 +408,22 @@
             <div id="tab-panel-wire" class="dock-tab-panel is-hidden" role="tabpanel" aria-labelledby="tab-btn-wire">
               <div class="wire-header-grid">
                 <div class="spec-row">
-                  <span class="micro-label">ENDPOINT HOST</span>
+                  <span class="micro-label">SERVER HOST</span>
                   <span class="spec-leader" aria-hidden="true"></span>
                   <span id="wire-host" class="spec-val">--</span>
                 </div>
                 <div class="spec-row">
-                  <span class="micro-label">TRANSPORT // SCHEME</span>
+                  <span class="micro-label">PROTOCOL</span>
                   <span class="spec-leader" aria-hidden="true"></span>
                   <span id="wire-scheme" class="spec-val">--</span>
                 </div>
                 <div class="spec-row">
-                  <span class="micro-label">RANGE CAPABILITY</span>
+                  <span class="micro-label">RESUME SUPPORT</span>
                   <span class="spec-leader" aria-hidden="true"></span>
                   <span id="wire-ranges" class="spec-val">BYTES (HTTP 206)</span>
                 </div>
                 <div class="spec-row">
-                  <span class="micro-label">ACTIVE MULTIPLEX</span>
+                  <span class="micro-label">ACTIVE CONNECTIONS</span>
                   <span class="spec-leader" aria-hidden="true"></span>
                   <span id="wire-multiplex" class="spec-val">0 STREAMS</span>
                 </div>
@@ -435,7 +439,7 @@
       <div class="status-left">
         <div class="status-cell">
           <span id="status-link-led" class="status-led" data-state="idle"></span>
-          <span id="status-link-label" class="micro-label">INIT TELEMETRY BUS...</span>
+          <span id="status-link-label" class="micro-label">READY</span>
         </div>
         <div class="status-cell">
           <span class="micro-label">DOWN</span>
@@ -483,12 +487,12 @@
 
       <form id="form-add-download" class="modal-body">
         <div class="form-field">
-          <label for="input-urls" class="micro-label">SOURCE URIS (ONE PER LINE)</label>
+          <label for="input-urls" class="micro-label">DOWNLOAD URLS (ONE PER LINE)</label>
           <textarea
             id="input-urls"
             class="mono-textarea block-caret"
             rows="4"
-            placeholder="https://mirror.example.org/iso/archlinux-x86_64.iso"
+            placeholder="https://example.com/file.zip"
             required
             spellcheck="false"
           ></textarea>
@@ -496,8 +500,8 @@
 
         <div class="form-row-2col">
           <div class="form-field">
-            <label for="input-filename" class="micro-label">DETECTED FILENAME</label>
-            <input id="input-filename" class="mono-input" type="text" placeholder="Auto-detected from URI" spellcheck="false" />
+            <label for="input-filename" class="micro-label">FILENAME</label>
+            <input id="input-filename" class="mono-input" type="text" placeholder="Auto-detected from URL" spellcheck="false" />
           </div>
           <div class="form-field">
             <label for="select-category" class="micro-label">CATEGORY</label>
@@ -513,14 +517,14 @@
 
         <div class="form-row-2col">
           <div class="form-field">
-            <label for="input-folder" class="micro-label">DESTINATION DIRECTORY</label>
+            <label for="input-folder" class="micro-label">SAVE TO FOLDER</label>
             <div style="display: flex; gap: 6px;">
               <input id="input-folder" class="mono-input" type="text" value="C:\Users\Administrator\Downloads" spellcheck="false" style="flex: 1;" />
               <button type="button" id="btn-browse-folder" class="btn btn-ghost" style="padding: 0 10px; font-size: 11px;">Browse</button>
             </div>
           </div>
           <div class="form-field">
-            <label for="select-queue" class="micro-label">TARGET QUEUE</label>
+            <label for="select-queue" class="micro-label">QUEUE</label>
             <select id="select-queue" class="mono-select"></select>
           </div>
         </div>
@@ -549,7 +553,7 @@
       <span class="reg-mark reg-br" aria-hidden="true"></span>
 
       <header class="modal-header">
-        <h2 id="dialog-settings-title" class="panel-title" data-decode="SYSTEM CONFIGURATION">SYSTEM CONFIGURATION</h2>
+        <h2 id="dialog-settings-title" class="panel-title" data-decode="SETTINGS">SETTINGS</h2>
         <button type="button" class="icon-btn-sm" data-close-modal="dialog-settings-backdrop" data-tooltip="Close (Esc)" aria-label="Close settings">
           <span data-icon="close"></span>
         </button>
@@ -557,22 +561,22 @@
 
       <div class="modal-body">
         <div class="form-field">
-          <span class="micro-label">COLORIMETRY // THEME PROFILE</span>
+          <span class="micro-label">THEME</span>
           <div id="theme-picker-grid" class="theme-picker-grid" role="radiogroup" aria-label="Theme selection"></div>
         </div>
 
         <div class="form-field">
           <span class="micro-label">CLIPBOARD MONITOR</span>
           <label class="toggle-row" for="toggle-clipboard">
-            <span class="toggle-label-text">Automatically detect HTTP/HTTPS links copied to clipboard</span>
+            <span class="toggle-label-text">Automatically detect download links copied to clipboard</span>
             <input id="toggle-clipboard" type="checkbox" checked />
           </label>
         </div>
 
         <div class="form-field">
-          <span class="micro-label">PIEZO TELEMETRY AUDIO</span>
+          <span class="micro-label">SOUND EFFECTS</span>
           <label class="toggle-row" for="toggle-piezo">
-            <span class="toggle-label-text">Synthesize 2ms hardware piezo clicks on UI actuation and task completion</span>
+            <span class="toggle-label-text">Play sound on download completion and click actions</span>
             <input id="toggle-piezo" type="checkbox" checked />
           </label>
         </div>
@@ -599,7 +603,7 @@
       <span class="reg-mark reg-br" aria-hidden="true"></span>
 
       <header class="modal-header">
-        <h2 id="dialog-queue-title" class="panel-title" data-decode="QUEUE CONFIGURATION">QUEUE CONFIGURATION</h2>
+        <h2 id="dialog-queue-title" class="panel-title" data-decode="QUEUE SETTINGS">QUEUE SETTINGS</h2>
         <button type="button" class="icon-btn-sm" data-close-modal="dialog-queue-backdrop" data-tooltip="Close (Esc)" aria-label="Close queue settings">
           <span data-icon="close"></span>
         </button>
@@ -614,21 +618,21 @@
 
         <div class="form-row-2col">
           <div class="form-field">
-            <label for="queue-max-concurrent" class="micro-label">MAX CONCURRENT STREAMS</label>
+            <label for="queue-max-concurrent" class="micro-label">MAX CONCURRENT DOWNLOADS</label>
             <input id="queue-max-concurrent" class="mono-input" type="number" min="1" max="16" value="2" />
           </div>
           <div class="form-field">
-            <label for="queue-speed-limit" class="micro-label">BANDWIDTH LIMIT (KB/S, 0=UNLIMITED)</label>
+            <label for="queue-speed-limit" class="micro-label">SPEED LIMIT (KB/S, 0=UNLIMITED)</label>
             <input id="queue-speed-limit" class="mono-input" type="number" min="0" step="64" value="0" />
           </div>
         </div>
 
         <div class="form-field">
-          <label for="queue-on-finish" class="micro-label">ON QUEUE FINISH POWER ACTION</label>
+          <label for="queue-on-finish" class="micro-label">WHEN QUEUE FINISHES</label>
           <select id="queue-on-finish" class="mono-select">
-            <option value="none">DO NOTHING // STANDBY</option>
-            <option value="sleep">PUT PC TO SLEEP (SUSPEND)</option>
-            <option value="shutdown">SHUT DOWN PC (WITH 60S COUNTDOWN ABORT)</option>
+            <option value="none">Do nothing</option>
+            <option value="sleep">Put computer to sleep</option>
+            <option value="shutdown">Shut down computer (60s countdown)</option>
           </select>
         </div>
 
@@ -660,7 +664,7 @@
           id="palette-input"
           class="palette-input block-caret"
           type="text"
-          placeholder="TYPE A COMMAND OR SEARCH TASKS..."
+          placeholder="Type a command or search downloads..."
           autocomplete="off"
           spellcheck="false"
         />
@@ -681,8 +685,8 @@
       <span class="reg-mark reg-tr" aria-hidden="true"></span>
       <span class="reg-mark reg-bl" aria-hidden="true"></span>
       <span class="reg-mark reg-br" aria-hidden="true"></span>
-      <h2 class="panel-title">DROP URI TO INITIALIZE TRANSFER</h2>
-      <p class="empty-desc">Release links or text payload to enqueue into OpenDL.</p>
+      <h2 class="panel-title">DROP DOWNLOAD LINKS HERE</h2>
+      <p class="empty-desc">Drop URLs or download links to add them to OpenDL.</p>
     </div>
   </div>
 

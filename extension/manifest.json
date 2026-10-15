@@ -3,6 +3,7 @@
   "name": "OpenDL Integration",
   "version": "1.0.0",
   "description": "Seamless high-speed download interception for OpenDL",
+  "key": "MIIBITANBgkqhkiG9w0BAQEFAAOCAQ4AMIIBCQKCAQB9sRlPlJWZsHJ4xlPvmb2nwh/0Oj/6IBm0uJ8Jyht/G2Em3qKhJ7xrt7XPIHU7uyVRR4iS1tGEW1fJyMv0XeuC4ISuf/63uh0vQyWlTY3eNH0Hd9wl8ovECYjq8Tn5KzS17jrT4sdmwRXjKbqRajUzzcg7pFhRUoTOAq8NkRHLzzqBwSrJwBh38/vMtlcqjWQhojTgDDOyO2/y+gBV2d/4w8wwbAqCpJa48uzIrCEQV6nlGYx4Iyh4FBdwRigQc9YnP1Zihkv4fALXcmtT0tgzdET1zaRy66+Dj8zQKTC/qE0WCbSEhhdHmg6eQauq+c0upQt+vzy9X76UGquK9BMTAgMBAAE=",
   "permissions": [
     "downloads",
     "nativeMessaging",

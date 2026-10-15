@@ -8,9 +8,9 @@ function buildPaletteItems(query, actionsCallback) {
   const q = query.trim().toLowerCase();
   const baseCommands = [
     { id: "cmd-add", label: "Add New Download", hint: "CTRL+N", run: () => openAddDialog() },
-    { id: "cmd-resume-all", label: "Resume All Transfers", hint: "ACTION", run: () => actionsCallback("resume-all") },
-    { id: "cmd-pause-all", label: "Pause All Transfers", hint: "ACTION", run: () => actionsCallback("pause-all") },
-    { id: "cmd-view-all", label: "Switch View: All Transfers", hint: "VIEW", run: () => actionsCallback("view", "all") },
+    { id: "cmd-resume-all", label: "Resume All Downloads", hint: "ACTION", run: () => actionsCallback("resume-all") },
+    { id: "cmd-pause-all", label: "Pause All Downloads", hint: "ACTION", run: () => actionsCallback("pause-all") },
+    { id: "cmd-view-all", label: "Switch View: All Downloads", hint: "VIEW", run: () => actionsCallback("view", "all") },
     { id: "cmd-view-down", label: "Switch View: Downloading", hint: "VIEW", run: () => actionsCallback("view", "downloading") },
     { id: "cmd-view-comp", label: "Switch View: Completed", hint: "VIEW", run: () => actionsCallback("view", "completed") },
     { id: "cmd-view-queued", label: "Switch View: Queued", hint: "VIEW", run: () => actionsCallback("view", "queued") },
@@ -19,12 +19,12 @@ function buildPaletteItems(query, actionsCallback) {
     { id: "cmd-theme-amber", label: "Switch Theme: Amber Day", hint: "THEME", run: () => setTheme("amber-day") },
     { id: "cmd-theme-blueprint", label: "Switch Theme: Blueprint", hint: "THEME", run: () => setTheme("blueprint") },
     { id: "cmd-theme-system", label: "Switch Theme: System", hint: "THEME", run: () => setTheme("system") },
-    { id: "cmd-settings", label: "Open System Configuration", hint: "SETTINGS", run: () => openSettingsDialog() }
+    { id: "cmd-settings", label: "Open Settings", hint: "SETTINGS", run: () => openSettingsDialog() }
   ];
 
   const taskCommands = store.tasks.map((t) => ({
     id: `task-${t.id}`,
-    label: `Task: ${t.name}`,
+    label: `Download: ${t.name}`,
     hint: t.status.toUpperCase(),
     run: () => {
       store.view = "all";
@@ -44,7 +44,7 @@ function renderPaletteList() {
   const listEl = document.getElementById("palette-list");
   if (!listEl) return;
   if (currentItems.length === 0) {
-    listEl.innerHTML = `<li class="palette-item"><span class="micro-label">NO MATCHING COMMANDS</span></li>`;
+    listEl.innerHTML = `<li class="palette-item"><span class="micro-label">No matching commands</span></li>`;
     return;
   }
   activeIndex = Math.max(0, Math.min(activeIndex, currentItems.length - 1));

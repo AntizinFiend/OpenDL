@@ -17,8 +17,12 @@ pub fn install_native_manifests(custom_ext_ids: &[String]) -> Result<()> {
     let exe_str = current_exe.to_string_lossy().to_string();
 
     let mut allowed_origins = vec![
-        // Deterministic extension ID for this workspace in Brave / Chromium
+        // Deterministic extension ID for OpenDL (derived from manifest key)
+        "chrome-extension://hclmjoafklhnljjihblhmnigbbgannlf/".to_string(),
         "chrome-extension://hiigfpegfninmnidhkcjebcbanmhfbdl/".to_string(),
+        "chrome-extension://lggbokfckofcgjndaboioakcmincinpo/".to_string(), // Motrix extension compatibility
+        "chrome-extension://lombjkbnbdmhdegbiijbdbafcmphcemi/".to_string(),
+        "chrome-extension://ibiafnimffjnfjcbclnnpbbbidlphgbp/".to_string(),
     ];
 
     for ext_id in custom_ext_ids {

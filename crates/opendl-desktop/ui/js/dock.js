@@ -481,9 +481,9 @@ export function initDockInteractions() {
   const titleEl = document.getElementById("dock-title-decode");
 
   const tabTitles = {
-    segments: "SEGMENT TELEMETRY",
-    throughput: "BUS THROUGHPUT",
-    wire: "PROTOCOL // WIRE INSPECTOR"
+    segments: "CONNECTIONS",
+    throughput: "DOWNLOAD SPEED",
+    wire: "CONNECTION LOGS"
   };
 
   document.querySelectorAll(".dock-tab").forEach((btn) => {
@@ -493,7 +493,7 @@ export function initDockInteractions() {
       if (store.dockCollapsed) setDockCollapsed(false);
       setDockTab(tab);
       playPiezo("snap");
-      decodeTitleEffect(titleEl, tabTitles[tab] || "TELEMETRY");
+      decodeTitleEffect(titleEl, tabTitles[tab] || "DETAILS");
     });
   });
 
@@ -511,7 +511,7 @@ export function initDockInteractions() {
     const next = !store.dockCollapsed;
     setDockCollapsed(next);
     playPiezo("snap");
-    if (!next) decodeTitleEffect(titleEl, tabTitles[store.dockTab] || "TELEMETRY");
+    if (!next) decodeTitleEffect(titleEl, tabTitles[store.dockTab] || "DETAILS");
   });
 
   closeBtn?.addEventListener("click", (e) => {
