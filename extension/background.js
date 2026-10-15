@@ -52,10 +52,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       const cookies = await getCookiesForUrl(msg.url);
+      let cleanSuggested = (msg.suggestedFilename || "").split(/[/\\]/).pop() || undefined;
       triggerOpenDlDownload({
         action: "download",
         url: msg.url,
-        filename: msg.suggestedFilename || undefined,
+        filename: cleanSuggested,
         referrer: msg.referrer || (sender.tab && sender.tab.url) || "",
         cookies: cookies,
         user_agent: navigator.userAgent
@@ -99,11 +100,13 @@ if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
       // Tell Chrome filename determination is complete (canceled)
       suggest();
 
+      let rawFilename = item.filename || "";
+      let cleanFilename = rawFilename ? rawFilename.split(/[/\\]/).pop() : undefined;
       const cookies = await getCookiesForUrl(url);
       triggerOpenDlDownload({
         action: "download",
         url: url,
-        filename: item.filename || undefined,
+        filename: cleanFilename,
         referrer: item.referrer || "",
         cookies: cookies,
         user_agent: navigator.userAgent,

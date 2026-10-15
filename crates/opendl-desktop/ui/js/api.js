@@ -137,14 +137,61 @@ function inferCategory(name = "") {
   return "Documents";
 }
 
-function inferNameFromUrl(url = "") {
+export function inferNameFromUrl(url = "") {
+  if (!url || typeof url !== "string") return "download.bin";
   try {
-    const u = new URL(url);
-    const base = u.pathname.split("/").filter(Boolean).pop();
-    return base ? decodeURIComponent(base) : url;
+    const u = new URL(url.trim());
+
+    // 1. Check query parameters for explicit filename hints
+    const params = u.searchParams;
+    const queryKeys = ["filename", "file_name", "fn", "file", "name", "title", "response-content-disposition"];
+    for (const k of queryKeys) {
+      const val = params.get(k);
+      if (val && val.trim()) {
+        let clean = decodeURIComponent(val.trim());
+        if (clean.includes("filename=")) {
+          const m = clean.match(/filename\*?=['"]?(?:UTF-8'')?([^'";]+)['"]?/i);
+          if (m && m[1]) clean = decodeURIComponent(m[1].trim());
+        }
+        clean = clean.split(/[/\\]/).pop() || "";
+        if (clean && clean.includes(".") && !clean.endsWith(".")) {
+          return clean;
+        }
+      }
+    }
+
+    // 2. Check path segments
+    const segments = u.pathname.split("/").map((s) => decodeURIComponent(s.trim())).filter(Boolean);
+    const scriptExts = [".php", ".jsp", ".asp", ".aspx", ".cgi", ".do", ".action", ".html", ".htm"];
+    const genericBases = ["download", "dl", "get", "media", "stream", "file", "view"];
+
+    while (segments.length > 0) {
+      const last = segments.pop();
+      if (!last) continue;
+      const lower = last.toLowerCase();
+      const isScript = scriptExts.some((ext) => lower.endsWith(ext));
+      const isGeneric = genericBases.includes(lower);
+
+      if (!isScript && !isGeneric && last.includes(".")) {
+        return last;
+      }
+      if (!isScript && !isGeneric && last.length > 0 && segments.length === 0) {
+        return last;
+      }
+    }
+
+    for (const k of ["title", "name", "filename", "file"]) {
+      const val = params.get(k);
+      if (val && val.trim()) {
+        const clean = decodeURIComponent(val.trim()).split(/[/\\]/).pop();
+        if (clean) return clean;
+      }
+    }
+
+    return "download.bin";
   } catch {
-    const parts = String(url).split("/").filter(Boolean);
-    return parts.pop() || "unnamed-resource.bin";
+    const clean = String(url).split(/[/\\]/).pop()?.split("?")[0];
+    return clean || "download.bin";
   }
 }
 
@@ -285,17 +332,23 @@ export async function getAllProgress() {
 
 export async function addTask(payload) {
   const { url, name, category, queue, folder, startNow = true } = payload;
+  const cleanName = (name || "").split(/[/\\]/).pop() || "";
+  const cleanFolder = (folder || "").trim();
+  const destination = cleanFolder
+    ? (cleanName ? `${cleanFolder.replace(/[/\\]+$/, '')}\\${cleanName}` : cleanFolder)
+    : undefined;
+
   if (hasTauri()) {
     const res = await window.__TAURI__.core.invoke("add_task", {
       url,
-      filename: name || undefined,
+      filename: cleanName || undefined,
       start_now: startNow,
-      destination: folder ? `${folder}\\${name || ''}` : undefined,
+      destination,
       queue_id: queue || undefined
     });
-    return normalizeTask(res || { id: `task-${Date.now()}`, url, name, category, queue, status: startNow ? "downloading" : "queued" });
+    return normalizeTask(res || { id: `task-${Date.now()}`, url, name: cleanName, category, queue, status: startNow ? "downloading" : "queued" });
   }
-  const resolvedName = name || inferNameFromUrl(url);
+  const resolvedName = cleanName || inferNameFromUrl(url);
   const totalBytes = 536870912;
   const quarter = totalBytes / 4;
   const newTask = {
@@ -402,6 +455,32 @@ export async function windowClose() {
   }
   const win = window.__TAURI__?.window?.getCurrentWindow?.();
   if (win) await win.close();
+}
+
+export async function windowStartDragging() {
+  if (hasTauri()) {
+    try {
+      await window.__TAURI__.core.invoke("start_dragging");
+      return;
+    } catch (e) {
+      console.warn("start_dragging error:", e);
+    }
+  }
+  const win = window.__TAURI__?.window?.getCurrentWindow?.();
+  if (win && typeof win.startDragging === "function") {
+    await win.startDragging();
+  }
+}
+
+export async function probeDownload(url) {
+  if (hasTauri() && url && (url.startsWith("http://") || url.startsWith("https://"))) {
+    try {
+      return await window.__TAURI__.core.invoke("probe_download", { url });
+    } catch (e) {
+      console.warn("probe_download error:", e);
+    }
+  }
+  return null;
 }
 
 export function detectFilenameFromUrl(url) {

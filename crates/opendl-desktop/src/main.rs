@@ -378,6 +378,26 @@ async fn is_window_maximized(window: tauri::Window) -> Result<bool, String> {
     window.is_maximized().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn start_dragging(window: tauri::Window) -> Result<(), String> {
+    window.start_dragging().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn probe_download(url: String) -> Result<opendl_engine::DownloadMetadata, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let options = opendl_engine::DownloadOptions::new(&url, "");
+    opendl_engine::probe::probe_url(&client, &options)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 fn get_db_path() -> PathBuf {
     if let Ok(appdata) = std::env::var("APPDATA") {
         PathBuf::from(appdata).join("OpenDL").join("opendl.db")
@@ -558,6 +578,10 @@ fn run_app() -> Result<()> {
                                     let _ = window.show();
                                     let _ = window.set_focus();
                                     let _ = window.emit("browser_download_request", &msg);
+                                    if let Ok(json_str) = serde_json::to_string(&msg) {
+                                        let js = format!("if (window.__onBrowserDownloadRequest) {{ window.__onBrowserDownloadRequest({}); }}", json_str);
+                                        let _ = window.eval(&js);
+                                    }
                                 }
                                 IpcResponse::ok("Intercepted and prompted in OpenDL Desktop dialog")
                             }
@@ -587,6 +611,8 @@ fn run_app() -> Result<()> {
             toggle_maximize_window,
             close_window,
             is_window_maximized,
+            start_dragging,
+            probe_download,
             list_queues,
             create_queue,
             update_queue,

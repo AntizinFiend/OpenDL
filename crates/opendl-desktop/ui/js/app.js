@@ -8,6 +8,7 @@ import {
   windowMinimize,
   windowToggleMaximize,
   windowClose,
+  windowStartDragging,
   getDiskFree,
   getPendingIntercepts
 } from "./api.js";
@@ -131,9 +132,23 @@ async function refreshTaskList() {
     store.focusedRowId = active.id;
   }
   notify("tasks");
+async function checkPendingIntercepts() {
+  try {
+    const pending = await getPendingIntercepts();
+    if (pending && pending.length > 0) {
+      for (const item of pending) {
+        if (item.url) {
+          openAddDialog(item.url, item.filename || "");
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to check pending intercepts:", err);
+  }
 }
 
 async function pollProgressTick() {
+  await checkPendingIntercepts();
   const progressMap = await getAllProgress();
   let totalSpeed = 0;
 
@@ -218,7 +233,18 @@ async function initApp() {
     document.body.classList.toggle("is-document-hidden", document.hidden);
   });
 
-  // Window controls
+  // Window dragging & controls
+  const titlebar = document.getElementById("titlebar");
+  titlebar?.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest("button, input, select, textarea, .keycap, a")) return;
+    if (e.detail === 2) {
+      windowToggleMaximize();
+      return;
+    }
+    windowStartDragging();
+  });
+
   document.getElementById("win-minimize")?.addEventListener("click", () => windowMinimize());
   document.getElementById("win-maximize")?.addEventListener("click", () => windowToggleMaximize());
   document.getElementById("win-close")?.addEventListener("click", () => windowClose());
@@ -373,7 +399,13 @@ async function initApp() {
 
 initApp();
 
-// Extension Interception Listener
+// Extension Interception Listeners
+window.__onBrowserDownloadRequest = (payload) => {
+  if (payload && payload.url) {
+    openAddDialog(payload.url, payload.filename || "");
+  }
+};
+
 if (typeof window !== "undefined" && window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen("browser_download_request", (event) => {
     if (event.payload && event.payload.url) {

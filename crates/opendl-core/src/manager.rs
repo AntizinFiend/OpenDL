@@ -25,6 +25,26 @@ pub struct DownloadManager {
     last_db_save: Arc<Mutex<HashMap<Uuid, u64>>>,
 }
 
+fn is_generic_filename(name: &str) -> bool {
+    let lower = name.trim().to_lowercase();
+    if lower.is_empty()
+        || lower == "download.bin"
+        || lower == "download"
+        || lower == "download.php"
+        || lower == "file"
+        || lower == "unnamed"
+        || lower == "index.html"
+        || lower == "index.php"
+    {
+        return true;
+    }
+    let script_exts = [".php", ".jsp", ".asp", ".aspx", ".cgi", ".do", ".action"];
+    if script_exts.iter().any(|ext| lower.ends_with(ext)) {
+        return true;
+    }
+    false
+}
+
 impl DownloadManager {
     pub fn new(db: Arc<Database>, download_dir: Option<PathBuf>) -> Self {
         let dir = download_dir.unwrap_or_else(dirs_or_default_download_dir);
@@ -66,14 +86,32 @@ impl DownloadManager {
 
     pub async fn add_from_ipc(&self, msg: IpcMessage, start_now: bool) -> Result<Uuid> {
         let url = msg.url.context("URL is required")?;
-        let filename = msg.filename.unwrap_or_else(|| {
+        let raw_filename = msg.filename.unwrap_or_else(|| {
             opendl_engine::probe::extract_filename(None, None, &url)
         });
+
+        // Strip any directory or drive letter prefix if raw_filename had path components
+        let mut filename = Path::new(&raw_filename)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or(raw_filename);
+        if filename.is_empty() || filename == "." {
+            filename = opendl_engine::probe::extract_filename(None, None, &url);
+        }
 
         let category = self.db.classify_category(&filename);
         let dest_dir = self.default_download_dir.join(&category);
         let destination = if let Some(d) = msg.destination {
-            PathBuf::from(d)
+            let p = PathBuf::from(&d);
+            let s = d.replace('/', "\\");
+            if p.is_dir() || s.ends_with('\\') {
+                p.join(&filename)
+            } else if let Some(parent) = p.parent() {
+                let fname = p.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| filename.clone());
+                parent.join(fname)
+            } else {
+                dest_dir.join(&filename)
+            }
         } else {
             dest_dir.join(&filename)
         };
@@ -83,7 +121,13 @@ impl DownloadManager {
             .unwrap_or_default()
             .as_secs();
 
-        let queue_id = msg.queue_id.unwrap_or_else(|| "main".to_string());
+        let mut queue_id = msg.queue_id.unwrap_or_else(|| "main".to_string());
+        if let Ok(queues) = self.db.get_all_queues() {
+            if let Some(q) = queues.iter().find(|q| q.id == queue_id || q.name.eq_ignore_ascii_case(&queue_id)) {
+                queue_id = q.id.clone();
+            }
+        }
+
         let task_id = Uuid::new_v4();
         let record = TaskRecord {
             id: task_id,
@@ -160,12 +204,23 @@ impl DownloadManager {
             }
         }
 
+        let clean_filename = Path::new(&record.filename)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| record.filename.clone());
+
+        let out_filename = if is_generic_filename(&clean_filename) {
+            None
+        } else {
+            Some(clean_filename.as_str())
+        };
+
         let gid = self
             .aria2_client
             .add_uri(
                 &[record.url.clone()],
                 Some(dest_parent),
-                Some(&record.filename),
+                out_filename,
                 &headers,
                 speed_limit,
                 Some(options.connections),
@@ -367,6 +422,26 @@ impl DownloadManager {
                                     };
 
                                     if let Some(id) = task_id {
+                                        // Update resolved filename from aria2 if it learned the real name via Content-Disposition/redirects
+                                        if let Some(ref files) = status.files {
+                                            if let Some(first) = files.first() {
+                                                if !first.path.is_empty() {
+                                                    let actual_path = PathBuf::from(&first.path);
+                                                    if let Some(actual_name) = actual_path.file_name().map(|f| f.to_string_lossy().to_string()) {
+                                                        if !actual_name.is_empty() {
+                                                            if let Ok(Some(task)) = db.get_task(id) {
+                                                                if task.filename != actual_name {
+                                                                    let cat = db.classify_category(&actual_name);
+                                                                    let total_len = status.total_length.parse::<u64>().ok().filter(|&l| l > 0);
+                                                                    let _ = db.update_task_metadata(id, &actual_name, &actual_path, total_len.or(task.total_size), &cat, None);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
                                         let progress = status.to_download_progress();
                                         let dl = progress.downloaded_bytes;
 
@@ -404,6 +479,25 @@ impl DownloadManager {
                                     };
 
                                     if let Some(id) = task_id {
+                                        if let Some(ref files) = status.files {
+                                            if let Some(first) = files.first() {
+                                                if !first.path.is_empty() {
+                                                    let actual_path = PathBuf::from(&first.path);
+                                                    if let Some(actual_name) = actual_path.file_name().map(|f| f.to_string_lossy().to_string()) {
+                                                        if !actual_name.is_empty() {
+                                                            if let Ok(Some(task)) = db.get_task(id) {
+                                                                if task.filename != actual_name {
+                                                                    let cat = db.classify_category(&actual_name);
+                                                                    let total_len = status.total_length.parse::<u64>().ok().filter(|&l| l > 0);
+                                                                    let _ = db.update_task_metadata(id, &actual_name, &actual_path, total_len.or(task.total_size), &cat, None);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
                                         let is_complete = status.status == "complete";
                                         let dl: u64 = status.completed_length.parse().unwrap_or(0);
 

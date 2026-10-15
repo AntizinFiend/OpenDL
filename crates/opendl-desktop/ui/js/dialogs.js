@@ -14,6 +14,7 @@ import {
   deleteTask,
   detectFilenameFromUrl,
   detectCategoryFromFilename,
+  probeDownload,
   openPath,
   showInFolder,
   selectFolder,
@@ -44,16 +45,33 @@ export function openAddDialog(prefillUrl = "", prefillFilename = "") {
   if (!backdrop) return;
   queueSelect.innerHTML = store.queues.map((q) => `<option value="${q}">${q}</option>`).join("");
   urlsInput.value = prefillUrl;
-  if (prefillFilename) {
-    nameInput.value = prefillFilename;
-    catSelect.value = detectCategoryFromFilename(prefillFilename);
+
+  let cleanPrefill = (prefillFilename || "").split(/[/\\]/).pop() || "";
+  if (cleanPrefill) {
+    nameInput.value = cleanPrefill;
+    catSelect.value = detectCategoryFromFilename(cleanPrefill);
   } else if (prefillUrl) {
-    const firstLine = prefillUrl.split(/\r?\n/).find((l) => l.trim());
+    const firstLine = prefillUrl.split(/\r?\n/).find((l) => l.trim()) || "";
     const fn = detectFilenameFromUrl(firstLine);
     nameInput.value = fn;
     catSelect.value = detectCategoryFromFilename(fn);
   } else {
     nameInput.value = "";
+  }
+
+  // Background probe for real server filename and content length
+  if (prefillUrl) {
+    const firstLine = prefillUrl.split(/\r?\n/).find((l) => l.trim()) || "";
+    if (firstLine.startsWith("http://") || firstLine.startsWith("https://")) {
+      probeDownload(firstLine).then((meta) => {
+        if (meta && meta.suggested_filename && meta.suggested_filename !== "download.bin") {
+          if (!nameInput.value || nameInput.value === "download.bin" || nameInput.value.endsWith(".php") || nameInput.value.endsWith(".asp") || !nameInput.value.includes(".")) {
+            nameInput.value = meta.suggested_filename;
+            catSelect.value = detectCategoryFromFilename(meta.suggested_filename);
+          }
+        }
+      }).catch(() => {});
+    }
   }
 
   backdrop.classList.remove("is-hidden");
@@ -247,9 +265,20 @@ export function initDialogs(onTasksAdded) {
   urlsInput?.addEventListener("input", () => {
     const lines = urlsInput.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     if (lines.length === 1) {
-      const detected = detectFilenameFromUrl(lines[0]);
+      const url = lines[0];
+      const detected = detectFilenameFromUrl(url);
       nameInput.value = detected;
       catSelect.value = detectCategoryFromFilename(detected);
+      if (url.startsWith("http://") || url.startsWith("https://")) {
+        probeDownload(url).then((meta) => {
+          if (meta && meta.suggested_filename && meta.suggested_filename !== "download.bin") {
+            if (!nameInput.value || nameInput.value === detected) {
+              nameInput.value = meta.suggested_filename;
+              catSelect.value = detectCategoryFromFilename(meta.suggested_filename);
+            }
+          }
+        }).catch(() => {});
+      }
     } else if (lines.length > 1) {
       nameInput.value = `Batch (${lines.length} URIs)`;
     }
@@ -266,7 +295,10 @@ export function initDialogs(onTasksAdded) {
     const folder = document.getElementById("input-folder")?.value || "";
 
     for (let i = 0; i < lines.length; i++) {
-      const customName = lines.length === 1 ? nameInput.value.trim() : "";
+      let customName = lines.length === 1 ? nameInput.value.trim() : "";
+      if (customName) {
+        customName = customName.split(/[/\\]/).pop() || "";
+      }
       await addTask({
         url: lines[i],
         name: customName,
