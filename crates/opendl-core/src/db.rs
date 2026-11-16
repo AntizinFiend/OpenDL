@@ -78,7 +78,16 @@ pub struct TaskRecord {
     pub queue_id: String,
     #[serde(default)]
     pub queue_order: i64,
+    #[serde(default)]
+    pub referrer: Option<String>,
+    #[serde(default)]
+    pub cookies: Option<String>,
+    #[serde(default)]
+    pub user_agent: Option<String>,
+    #[serde(default)]
+    pub custom_headers: Option<String>,
 }
+
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -135,7 +144,11 @@ impl Database {
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 queue_id TEXT NOT NULL DEFAULT 'main',
-                queue_order INTEGER NOT NULL DEFAULT 0
+                queue_order INTEGER NOT NULL DEFAULT 0,
+                referrer TEXT,
+                cookies TEXT,
+                user_agent TEXT,
+                custom_headers TEXT
             );
 
             CREATE TABLE IF NOT EXISTS categories (
@@ -168,6 +181,31 @@ impl Database {
             .is_ok();
         if !has_queue_order {
             let _ = conn.execute("ALTER TABLE tasks ADD COLUMN queue_order INTEGER NOT NULL DEFAULT 0", []);
+        }
+
+        let has_referrer: bool = conn
+            .prepare("SELECT referrer FROM tasks LIMIT 1")
+            .is_ok();
+        if !has_referrer {
+            let _ = conn.execute("ALTER TABLE tasks ADD COLUMN referrer TEXT", []);
+        }
+        let has_cookies: bool = conn
+            .prepare("SELECT cookies FROM tasks LIMIT 1")
+            .is_ok();
+        if !has_cookies {
+            let _ = conn.execute("ALTER TABLE tasks ADD COLUMN cookies TEXT", []);
+        }
+        let has_user_agent: bool = conn
+            .prepare("SELECT user_agent FROM tasks LIMIT 1")
+            .is_ok();
+        if !has_user_agent {
+            let _ = conn.execute("ALTER TABLE tasks ADD COLUMN user_agent TEXT", []);
+        }
+        let has_custom_headers: bool = conn
+            .prepare("SELECT custom_headers FROM tasks LIMIT 1")
+            .is_ok();
+        if !has_custom_headers {
+            let _ = conn.execute("ALTER TABLE tasks ADD COLUMN custom_headers TEXT", []);
         }
 
         let has_on_complete: bool = conn
@@ -250,8 +288,9 @@ impl Database {
         conn.execute(
             "INSERT OR REPLACE INTO tasks (
                 id, url, filename, destination, total_size, downloaded_bytes,
-                status, category, etag, created_at, updated_at, queue_id, queue_order
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                status, category, etag, created_at, updated_at, queue_id, queue_order,
+                referrer, cookies, user_agent, custom_headers
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 task.id.to_string(),
                 task.url,
@@ -266,6 +305,10 @@ impl Database {
                 task.updated_at as i64,
                 task.queue_id,
                 task.queue_order,
+                task.referrer,
+                task.cookies,
+                task.user_agent,
+                task.custom_headers,
             ],
         )?;
         debug!(id = %task.id, "Task inserted into database");
@@ -320,7 +363,8 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, url, filename, destination, total_size, downloaded_bytes,
-                    status, category, etag, created_at, updated_at, queue_id, queue_order
+                    status, category, etag, created_at, updated_at, queue_id, queue_order,
+                    referrer, cookies, user_agent, custom_headers
              FROM tasks WHERE id = ?1",
         )?;
 
@@ -334,6 +378,10 @@ impl Database {
             let updated_at: i64 = row.get(10)?;
             let queue_id: String = row.get(11).unwrap_or_else(|_| "main".to_string());
             let queue_order: i64 = row.get(12).unwrap_or(0);
+            let referrer: Option<String> = row.get(13).ok();
+            let cookies: Option<String> = row.get(14).ok();
+            let user_agent: Option<String> = row.get(15).ok();
+            let custom_headers: Option<String> = row.get(16).ok();
 
             Ok(Some(TaskRecord {
                 id: Uuid::parse_str(&id_str)?,
@@ -349,6 +397,10 @@ impl Database {
                 updated_at: updated_at as u64,
                 queue_id,
                 queue_order,
+                referrer,
+                cookies,
+                user_agent,
+                custom_headers,
             }))
         } else {
             Ok(None)
@@ -359,7 +411,8 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, url, filename, destination, total_size, downloaded_bytes,
-                    status, category, etag, created_at, updated_at, queue_id, queue_order
+                    status, category, etag, created_at, updated_at, queue_id, queue_order,
+                    referrer, cookies, user_agent, custom_headers
              FROM tasks ORDER BY queue_order ASC, created_at DESC",
         )?;
 
@@ -372,6 +425,10 @@ impl Database {
             let updated_at: i64 = row.get(10)?;
             let queue_id: String = row.get(11).unwrap_or_else(|_| "main".to_string());
             let queue_order: i64 = row.get(12).unwrap_or(0);
+            let referrer: Option<String> = row.get(13).ok();
+            let cookies: Option<String> = row.get(14).ok();
+            let user_agent: Option<String> = row.get(15).ok();
+            let custom_headers: Option<String> = row.get(16).ok();
 
             Ok(TaskRecord {
                 id: Uuid::parse_str(&id_str).unwrap_or_default(),
@@ -387,6 +444,10 @@ impl Database {
                 updated_at: updated_at as u64,
                 queue_id,
                 queue_order,
+                referrer,
+                cookies,
+                user_agent,
+                custom_headers,
             })
         })?;
 
@@ -396,6 +457,7 @@ impl Database {
         }
         Ok(list)
     }
+
 
     pub fn delete_task(&self, id: Uuid) -> Result<()> {
         let conn = self.conn.lock().unwrap();
@@ -527,7 +589,8 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, url, filename, destination, total_size, downloaded_bytes,
-                    status, category, etag, created_at, updated_at, queue_id, queue_order
+                    status, category, etag, created_at, updated_at, queue_id, queue_order,
+                    referrer, cookies, user_agent, custom_headers
              FROM tasks WHERE queue_id = ?1 AND status = 'queued'
              ORDER BY queue_order ASC, created_at ASC LIMIT ?2",
         )?;
@@ -541,6 +604,10 @@ impl Database {
             let updated_at: i64 = row.get(10)?;
             let q_id: String = row.get(11).unwrap_or_else(|_| "main".to_string());
             let queue_order: i64 = row.get(12).unwrap_or(0);
+            let referrer: Option<String> = row.get(13).ok();
+            let cookies: Option<String> = row.get(14).ok();
+            let user_agent: Option<String> = row.get(15).ok();
+            let custom_headers: Option<String> = row.get(16).ok();
 
             Ok(TaskRecord {
                 id: Uuid::parse_str(&id_str).unwrap_or_default(),
@@ -556,8 +623,76 @@ impl Database {
                 updated_at: updated_at as u64,
                 queue_id: q_id,
                 queue_order,
+                referrer,
+                cookies,
+                user_agent,
+                custom_headers,
             })
         })?;
+
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn reorder_queue_tasks(&self, queue_id: &str, task_ids_in_order: &[Uuid]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        for (idx, id) in task_ids_in_order.iter().enumerate() {
+            conn.execute(
+                "UPDATE tasks SET queue_order = ?1 WHERE id = ?2 AND queue_id = ?3",
+                params![idx as i64, id.to_string(), queue_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn get_actionable_tasks_in_queue(&self, queue_id: &str) -> Result<Vec<TaskRecord>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, url, filename, destination, total_size, downloaded_bytes,
+                    status, category, etag, created_at, updated_at, queue_id, queue_order,
+                    referrer, cookies, user_agent, custom_headers
+             FROM tasks WHERE queue_id = ?1 AND status IN ('downloading', 'queued', 'paused')
+             ORDER BY queue_order ASC, created_at ASC",
+        )?;
+
+        let rows = stmt.query_map(params![queue_id], |row| {
+            let id_str: String = row.get(0)?;
+            let total_size: Option<i64> = row.get(4)?;
+            let downloaded: i64 = row.get(5)?;
+            let status_str: String = row.get(6)?;
+            let created_at: i64 = row.get(9)?;
+            let updated_at: i64 = row.get(10)?;
+            let q_id: String = row.get(11).unwrap_or_else(|_| "main".to_string());
+            let queue_order: i64 = row.get(12).unwrap_or(0);
+            let referrer: Option<String> = row.get(13).ok();
+            let cookies: Option<String> = row.get(14).ok();
+            let user_agent: Option<String> = row.get(15).ok();
+            let custom_headers: Option<String> = row.get(16).ok();
+
+            Ok(TaskRecord {
+                id: Uuid::parse_str(&id_str).unwrap_or_default(),
+                url: row.get(1)?,
+                filename: row.get(2)?,
+                destination: PathBuf::from(row.get::<_, String>(3)?),
+                total_size: total_size.map(|s| s as u64),
+                downloaded_bytes: downloaded as u64,
+                status: TaskStatus::from_str(&status_str),
+                category: row.get(7)?,
+                etag: row.get(8)?,
+                created_at: created_at as u64,
+                updated_at: updated_at as u64,
+                queue_id: q_id,
+                queue_order,
+                referrer,
+                cookies,
+                user_agent,
+                custom_headers,
+            })
+        })?;
+
 
         let mut list = Vec::new();
         for r in rows {

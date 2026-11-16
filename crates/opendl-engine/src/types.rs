@@ -14,6 +14,10 @@ pub struct DownloadOptions {
     pub headers: HashMap<String, String>,
     pub min_split_threshold: u64,
     pub speed_limit_bytes_per_sec: Option<u64>,
+    #[serde(default)]
+    pub select_file: Option<String>,
+    #[serde(default)]
+    pub seed_ratio: Option<f64>,
 }
 
 impl Default for DownloadOptions {
@@ -25,6 +29,8 @@ impl Default for DownloadOptions {
             headers: HashMap::new(),
             min_split_threshold: DEFAULT_MIN_SPLIT_THRESHOLD,
             speed_limit_bytes_per_sec: None,
+            select_file: None,
+            seed_ratio: None,
         }
     }
 }
@@ -63,7 +69,14 @@ pub struct DownloadMetadata {
     pub etag: Option<String>,
     pub last_modified: Option<String>,
     pub suggested_filename: String,
+    #[serde(default)]
+    pub referrer: Option<String>,
+    #[serde(default)]
+    pub cookies: Option<String>,
+    #[serde(default)]
+    pub is_webpage: bool,
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentProgress {
@@ -109,6 +122,52 @@ pub struct DownloadProgress {
     pub active_connections: usize,
     pub segments: Vec<SegmentProgress>,
     pub is_complete: bool,
+    #[serde(default)]
+    pub upload_speed_bytes_per_sec: f64,
+    #[serde(default)]
+    pub uploaded_bytes: u64,
+    #[serde(default)]
+    pub num_seeders: usize,
+    #[serde(default)]
+    pub num_peers: usize,
+    #[serde(default)]
+    pub is_seeding: bool,
+    #[serde(default)]
+    pub info_hash: Option<String>,
+    #[serde(default)]
+    pub piece_length: Option<u64>,
+    #[serde(default)]
+    pub num_pieces: Option<u64>,
+    #[serde(default)]
+    pub torrent_name: Option<String>,
+    #[serde(default)]
+    pub torrent_comment: Option<String>,
+    #[serde(default)]
+    pub torrent_creation_date: Option<i64>,
+}
+
+impl Default for DownloadProgress {
+    fn default() -> Self {
+        Self {
+            total_bytes: None,
+            downloaded_bytes: 0,
+            speed_bytes_per_sec: 0.0,
+            active_connections: 0,
+            segments: Vec::new(),
+            is_complete: false,
+            upload_speed_bytes_per_sec: 0.0,
+            uploaded_bytes: 0,
+            num_seeders: 0,
+            num_peers: 0,
+            is_seeding: false,
+            info_hash: None,
+            piece_length: None,
+            num_pieces: None,
+            torrent_name: None,
+            torrent_comment: None,
+            torrent_creation_date: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

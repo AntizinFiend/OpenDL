@@ -10,10 +10,17 @@
 *.db-shm
 *.log
 
-# Scratch files and temporary bundles
+# Scratch files, test artifacts, and temporary bundles
 opendl_ui_bundle.txt
 New folder/
 Other git projects/
+*.aria2
+*.torrent
+*.part
+*.crdownload
+
+# Local environment and caches
+.cargo/
 
 # OS-specific files
 Thumbs.db

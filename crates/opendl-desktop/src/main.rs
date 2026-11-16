@@ -24,17 +24,42 @@ async fn add_task(
     connections: Option<usize>,
     destination: Option<String>,
     queue_id: Option<String>,
+    #[allow(non_snake_case)]
+    select_files: Option<String>,
+    #[allow(non_snake_case)]
+    selectFiles: Option<String>,
+    #[allow(non_snake_case)]
+    seed_ratio: Option<f64>,
+    #[allow(non_snake_case)]
+    seedRatio: Option<f64>,
+    referrer: Option<String>,
+    cookies: Option<String>,
+    #[allow(non_snake_case)]
+    user_agent: Option<String>,
+    #[allow(non_snake_case)]
+    userAgent: Option<String>,
+    headers: Option<HashMap<String, String>>,
 ) -> Result<TaskRecord, String> {
     let should_start = start_now.unwrap_or(true);
+    let mut hdrs = headers.unwrap_or_default();
+    if let Some(sel) = select_files.or(selectFiles) {
+        if !sel.trim().is_empty() {
+            hdrs.insert("select-file".to_string(), sel);
+        }
+    }
+    if let Some(ratio) = seed_ratio.or(seedRatio) {
+        hdrs.insert("seed-ratio".to_string(), ratio.to_string());
+    }
+
     let msg = IpcMessage {
         action: "add_download".to_string(),
         url: Some(url),
         filename,
         destination,
-        referrer: None,
-        cookies: None,
-        user_agent: None,
-        headers: None,
+        referrer,
+        cookies,
+        user_agent: user_agent.or(userAgent),
+        headers: if hdrs.is_empty() { None } else { Some(hdrs) },
         task_id: None,
         connections,
         queue_id,
@@ -55,42 +80,39 @@ async fn add_task(
 }
 
 #[tauri::command]
-async fn list_tasks(manager: State<'_, AppManager>) -> Result<Vec<TaskRecord>, String> {
+async fn list_tasks(manager: State<'_, AppManager>, id: Option<String>) -> Result<Vec<TaskRecord>, String> {
+    let _ = id;
     manager.db().get_all_tasks().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn pause_task(manager: State<'_, AppManager>, id: String) -> Result<bool, String> {
-    let task_id = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
-    Ok(manager.pause_task(task_id))
+    if let Ok(task_id) = Uuid::parse_str(&id) {
+        return Ok(manager.pause_task(task_id));
+    }
+    Ok(true)
 }
 
 #[tauri::command]
 async fn resume_task(manager: State<'_, AppManager>, id: String) -> Result<bool, String> {
-    let task_id = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
-    let record = manager
-        .db()
-        .get_task(task_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Task not found".to_string())?;
-
-    let options = opendl_engine::DownloadOptions::new(&record.url, &record.destination);
-    manager
-        .start_download(task_id, options)
-        .await
-        .map_err(|e| e.to_string())?;
-
+    if let Ok(task_id) = Uuid::parse_str(&id) {
+        manager.resume_task(task_id).await.map_err(|e| e.to_string())?;
+    }
     Ok(true)
 }
+
 
 #[tauri::command]
 async fn delete_task(
     manager: State<'_, AppManager>,
     id: String,
-    delete_file: bool,
+    delete_file: Option<bool>,
+    #[allow(non_snake_case)] deleteFile: Option<bool>,
 ) -> Result<bool, String> {
-    let task_id = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
-    manager.delete_task(task_id, delete_file).map_err(|e| e.to_string())?;
+    let should_delete = delete_file.or(deleteFile).unwrap_or(false);
+    if let Ok(task_id) = Uuid::parse_str(&id) {
+        manager.delete_task(task_id, should_delete).map_err(|e| e.to_string())?;
+    }
     Ok(true)
 }
 
@@ -121,6 +143,7 @@ async fn get_all_progress(
                 active_connections: 0,
                 segments: Vec::new(),
                 is_complete: t.status == TaskStatus::Completed,
+                ..Default::default()
             },
         );
     }
@@ -170,7 +193,33 @@ async fn update_queue(
     manager: State<'_, AppManager>,
     queue: QueueRecord,
 ) -> Result<bool, String> {
+    let q_id = queue.id.clone();
     manager.db().insert_or_update_queue(&queue).map_err(|e| e.to_string())?;
+    let _ = manager.process_queue(&q_id).await;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn inspect_torrent_file(path: String) -> Result<opendl_core::TorrentInspectResult, String> {
+    opendl_core::inspect_torrent_file(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn reorder_queue_tasks(
+    manager: State<'_, AppManager>,
+    queue_id: String,
+    task_ids: Vec<String>,
+) -> Result<bool, String> {
+    let mut parsed = Vec::new();
+    for id_str in task_ids {
+        if let Ok(id) = Uuid::parse_str(&id_str) {
+            parsed.push(id);
+        }
+    }
+    manager
+        .reorder_queue_and_reschedule(&queue_id, &parsed)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -228,6 +277,8 @@ async fn trigger_power_action(action: String) -> Result<bool, String> {
 async fn select_folder(default_path: Option<String>) -> Result<Option<String>, String> {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let initial = default_path.unwrap_or_else(|| {
             dirs_sys_or_default().unwrap_or_else(|| "C:\\".to_string())
         });
@@ -236,7 +287,8 @@ async fn select_folder(default_path: Option<String>) -> Result<Option<String>, S
             initial.replace('\'', "''")
         );
         let output = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", &script])
+            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|e| e.to_string())?;
         let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -249,6 +301,31 @@ async fn select_folder(default_path: Option<String>) -> Result<Option<String>, S
     #[cfg(not(windows))]
     {
         Ok(default_path)
+    }
+}
+
+#[tauri::command]
+async fn select_torrent_file() -> Result<Option<String>, String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let script = "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null; $dlg = New-Object System.Windows.Forms.OpenFileDialog; $dlg.Filter = 'Torrent Files (*.torrent)|*.torrent|All Files (*.*)|*.*'; $dlg.Title = 'Select .torrent File'; if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $dlg.FileName }";
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| e.to_string())?;
+        let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if s.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(s))
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(None)
     }
 }
 
@@ -343,6 +420,127 @@ async fn get_disk_free(path: Option<String>) -> Result<u64, String> {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct DriveInfo {
+    pub letter: String,
+    pub label: String,
+    pub total_bytes: u64,
+    pub free_bytes: u64,
+    pub drive_type: String,
+}
+
+#[tauri::command]
+async fn get_all_drives() -> Result<Vec<DriveInfo>, String> {
+    #[cfg(windows)]
+    {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStringExt;
+
+        let mut drives = Vec::new();
+        unsafe {
+            #[link(name = "kernel32")]
+            extern "system" {
+                fn GetLogicalDriveStringsW(nBufferLength: u32, lpBuffer: *mut u16) -> u32;
+                fn GetDriveTypeW(lpRootPathName: *const u16) -> u32;
+                fn GetDiskFreeSpaceExW(
+                    lpDirectoryName: *const u16,
+                    lpFreeBytesAvailableToCaller: *mut u64,
+                    lpTotalNumberOfBytes: *mut u64,
+                    lpTotalNumberOfFreeBytes: *mut u64,
+                ) -> i32;
+                fn GetVolumeInformationW(
+                    lpRootPathName: *const u16,
+                    lpVolumeNameBuffer: *mut u16,
+                    nVolumeNameSize: u32,
+                    lpVolumeSerialNumber: *mut u32,
+                    lpMaximumComponentLength: *mut u32,
+                    lpFileSystemFlags: *mut u32,
+                    lpFileSystemNameBuffer: *mut u16,
+                    nFileSystemNameSize: u32,
+                ) -> i32;
+            }
+
+            let mut buffer = [0u16; 512];
+            let len = GetLogicalDriveStringsW(buffer.len() as u32, buffer.as_mut_ptr());
+            if len > 0 && (len as usize) < buffer.len() {
+                let mut start = 0;
+                while start < (len as usize) {
+                    let mut end = start;
+                    while end < (len as usize) && buffer[end] != 0 {
+                        end += 1;
+                    }
+                    if end > start {
+                        let mut drive_w: Vec<u16> = buffer[start..end].to_vec();
+                        drive_w.push(0);
+                        let root_path = OsString::from_wide(&buffer[start..end]).to_string_lossy().to_string();
+                        let dtype = GetDriveTypeW(drive_w.as_ptr());
+                        let type_str = match dtype {
+                            2 => "removable",
+                            3 => "fixed",
+                            4 => "network",
+                            5 => "cdrom",
+                            6 => "ramdisk",
+                            _ => "other",
+                        };
+
+                        let mut free_bytes: u64 = 0;
+                        let mut total_bytes: u64 = 0;
+                        let mut total_free: u64 = 0;
+                        let free_ok = GetDiskFreeSpaceExW(
+                            drive_w.as_ptr(),
+                            &mut free_bytes,
+                            &mut total_bytes,
+                            &mut total_free,
+                        );
+
+                        let mut vol_name = [0u16; 256];
+                        let _ = GetVolumeInformationW(
+                            drive_w.as_ptr(),
+                            vol_name.as_mut_ptr(),
+                            vol_name.len() as u32,
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                            0,
+                        );
+                        let label_len = vol_name.iter().position(|&c| c == 0).unwrap_or(0);
+                        let label = if label_len > 0 {
+                            OsString::from_wide(&vol_name[..label_len]).to_string_lossy().to_string()
+                        } else {
+                            format!("Local Disk ({})", root_path.trim_end_matches('\\'))
+                        };
+
+                        if free_ok != 0 && total_bytes > 0 {
+                            drives.push(DriveInfo {
+                                letter: root_path,
+                                label,
+                                total_bytes,
+                                free_bytes,
+                                drive_type: type_str.to_string(),
+                            });
+                        }
+                    }
+                    start = end + 1;
+                }
+            }
+        }
+        Ok(drives)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(vec![
+            DriveInfo {
+                letter: "/".to_string(),
+                label: "Root Disk".to_string(),
+                total_bytes: 500 * 1024 * 1024 * 1024,
+                free_bytes: 120 * 1024 * 1024 * 1024,
+                drive_type: "fixed".to_string(),
+            }
+        ])
+    }
+}
+
 fn dirs_sys_or_default() -> Option<String> {
     if let Ok(profile) = std::env::var("USERPROFILE") {
         Some(PathBuf::from(profile).join("Downloads").to_string_lossy().to_string())
@@ -406,6 +604,119 @@ fn get_db_path() -> PathBuf {
     }
 }
 
+#[cfg(windows)]
+struct SingleInstanceMutex {
+    handle: *mut std::ffi::c_void,
+}
+
+#[cfg(windows)]
+impl SingleInstanceMutex {
+    fn acquire() -> Option<Self> {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+
+        let name: Vec<u16> = OsStr::new(r"Local\OpenDL_SingleInstance_Mutex")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        unsafe {
+            #[link(name = "kernel32")]
+            extern "system" {
+                fn CreateMutexW(
+                    lpMutexAttributes: *mut std::ffi::c_void,
+                    bInitialOwner: i32,
+                    lpName: *const u16,
+                ) -> *mut std::ffi::c_void;
+                fn GetLastError() -> u32;
+                fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+            }
+
+            const ERROR_ALREADY_EXISTS: u32 = 183;
+            let handle = CreateMutexW(std::ptr::null_mut(), 1, name.as_ptr());
+            if handle.is_null() {
+                return None;
+            }
+            if GetLastError() == ERROR_ALREADY_EXISTS {
+                CloseHandle(handle);
+                return None;
+            }
+            Some(Self { handle })
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for SingleInstanceMutex {
+    fn drop(&mut self) {
+        unsafe {
+            #[link(name = "kernel32")]
+            extern "system" {
+                fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+            }
+            if !self.handle.is_null() {
+                CloseHandle(self.handle);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn send_focus_to_existing_instance() {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    let pipe_name: Vec<u16> = OsStr::new(DEFAULT_PIPE_NAME)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn CreateFileW(
+                lpFileName: *const u16,
+                dwDesiredAccess: u32,
+                dwShareMode: u32,
+                lpSecurityAttributes: *mut std::ffi::c_void,
+                dwCreationDisposition: u32,
+                dwFlagsAndAttributes: u32,
+                hTemplateFile: *mut std::ffi::c_void,
+            ) -> *mut std::ffi::c_void;
+            fn WriteFile(
+                hFile: *mut std::ffi::c_void,
+                lpBuffer: *const u8,
+                nNumberOfBytesToWrite: u32,
+                lpNumberOfBytesWritten: *mut u32,
+                lpOverlapped: *mut std::ffi::c_void,
+            ) -> i32;
+            fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+        }
+
+        const GENERIC_READ: u32 = 0x80000000;
+        const GENERIC_WRITE: u32 = 0x40000000;
+        const OPEN_EXISTING: u32 = 3;
+        let invalid_handle = -1isize as *mut std::ffi::c_void;
+
+        let handle = CreateFileW(
+            pipe_name.as_ptr(),
+            GENERIC_READ | GENERIC_WRITE,
+            0,
+            std::ptr::null_mut(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
+        );
+
+        if handle != invalid_handle && !handle.is_null() {
+            let msg = b"{\"action\":\"focus_window\"}\n";
+            let mut written = 0u32;
+            let _ = WriteFile(handle, msg.as_ptr(), msg.len() as u32, &mut written, std::ptr::null_mut());
+            CloseHandle(handle);
+        }
+    }
+}
+
 fn main() {
     std::panic::set_hook(Box::new(|info| {
         let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
@@ -427,6 +738,16 @@ fn main() {
             let _ = std::fs::write(path, &msg);
         }
     }));
+
+    #[cfg(windows)]
+    let _instance_mutex = match SingleInstanceMutex::acquire() {
+        Some(m) => m,
+        None => {
+            // Application is already running in background/tray; focus existing window and exit cleanly
+            send_focus_to_existing_instance();
+            return;
+        }
+    };
 
     if let Err(e) = run_app() {
         let msg = format!("APPLICATION ERROR: {:?}", e);
@@ -568,6 +889,24 @@ fn run_app() -> Result<()> {
                                 let _ = opendl_core::trigger_power_action(&action);
                                 IpcResponse::ok("Power action triggered")
                             }
+                            "focus_window" => {
+                                for (_label, window) in h.webview_windows() {
+                                    let _ = window.unminimize();
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                                IpcResponse::ok("Window focused")
+                            }
+                            "move_task_queue" => {
+                                if let (Some(id), Some(qid)) = (msg.task_id, msg.queue_id) {
+                                    match mgr.db().set_task_queue(id, &qid) {
+                                        Ok(_) => IpcResponse::ok("Task moved to queue"),
+                                        Err(e) => IpcResponse::error(format!("Failed to move task: {}", e)),
+                                    }
+                                } else {
+                                    IpcResponse::error("Missing task_id or queue_id")
+                                }
+                            }
                             _ => {
                                 // Default interception: buffer in pending_intercepts and emit event
                                 if let Ok(mut pending) = pending_queue.lock() {
@@ -621,6 +960,10 @@ fn run_app() -> Result<()> {
             pause_queue,
             move_task_to_queue,
             select_folder,
+            select_torrent_file,
+            inspect_torrent_file,
+            reorder_queue_tasks,
+            get_all_drives,
             abort_shutdown,
             trigger_power_action,
         ])

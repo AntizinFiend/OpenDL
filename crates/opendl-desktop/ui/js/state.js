@@ -7,7 +7,9 @@ const STORAGE_KEYS = {
   clipboardEnabled: "opendl.clipboardEnabled",
   queues: "opendl.queues",
   piezoEnabled: "opendl.piezoEnabled",
-  segViewMode: "opendl.segViewMode"
+  segViewMode: "opendl.segViewMode",
+  settings: "opendl.settings",
+  colWidths: "opendl.colWidths"
 };
 
 function readStorage(key, fallback) {
@@ -26,6 +28,42 @@ function writeStorage(key, value) {
     // Ignore storage quota errors
   }
 }
+
+
+export const DEFAULT_SETTINGS = {
+  general: {
+    downloadDir: "C:\\Users\\Administrator\\Downloads",
+    startWithWindows: false,
+    minimizeToTray: true,
+    autoStartDownloads: true,
+    confirmDelete: true
+  },
+  storage: {
+    enabledDrives: ["C:\\", "D:\\"],
+    warnLowSpace: true,
+    lowSpaceThresholdGb: 10,
+    preallocateDiskSpace: true
+  },
+  network: {
+    maxConcurrentDownloads: 5,
+    maxConnectionsPerDownload: 16,
+    globalDownloadLimitKbps: 0,
+    globalUploadLimitKbps: 0,
+    timeoutSeconds: 30
+  },
+  bittorrent: {
+    enabled: true,
+    maxPeers: 60,
+    enableDht: true,
+    listenPort: 6881,
+    autoStopSeed: true
+  },
+  appearance: {
+    theme: "dark",
+    soundEnabled: true,
+    animationDuration: 650
+  }
+};
 
 export const RING_CAPACITY = 1800; // 15 minutes at 500ms intervals
 
@@ -60,7 +98,9 @@ export const store = {
   dockHeight: readStorage(STORAGE_KEYS.dockHeight, 228),
   dockTab: readStorage(STORAGE_KEYS.dockTab, "segments"),
   clipboardEnabled: readStorage(STORAGE_KEYS.clipboardEnabled, true),
-  dismissedClipboardUrl: ""
+  dismissedClipboardUrl: "",
+  settings: readStorage(STORAGE_KEYS.settings, DEFAULT_SETTINGS),
+  colWidths: readStorage(STORAGE_KEYS.colWidths, {})
 };
 
 const listeners = new Set();
@@ -195,7 +235,7 @@ export function formatEta(seconds) {
   return `${s}s`;
 }
 
-export function decodeTitleEffect(el, finalString) {
+export function decodeTitleEffect(el, finalString, customDuration) {
   if (!el) return;
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches || document.hidden;
   if (reduced) {
@@ -204,16 +244,20 @@ export function decodeTitleEffect(el, finalString) {
   }
   const glyphs = "0123456789ABCDEF//:_";
   const start = performance.now();
-  const duration = 180;
+  const duration = customDuration || (store.settings?.appearance?.animationDuration || 650);
   function step(now) {
     const t = Math.min(1, (now - start) / duration);
     const lockCount = Math.floor(t * finalString.length);
     let out = finalString.slice(0, lockCount);
     for (let i = lockCount; i < finalString.length; i++) {
-      out += finalString[i] === " " ? " " : glyphs[(i + Math.floor(now)) % glyphs.length];
+      out += finalString[i] === " " ? " " : glyphs[(i + Math.floor(now / 18)) % glyphs.length];
     }
     el.textContent = out;
-    if (t < 1) requestAnimationFrame(step);
+    if (t < 1) {
+      requestAnimationFrame(step);
+    } else {
+      el.textContent = finalString;
+    }
   }
   requestAnimationFrame(step);
 }
@@ -336,4 +380,15 @@ export function seedOrUpdateWireLogs(task) {
     }
   }
   store.prevTaskStates.set(task.id, task.status);
+}
+export function updateSettings(partial) {
+  store.settings = { ...store.settings, ...partial };
+  writeStorage(STORAGE_KEYS.settings, store.settings);
+  notify("settings");
+}
+
+export function setColumnWidths(view, widths) {
+  if (!store.colWidths) store.colWidths = {};
+  store.colWidths[view] = widths;
+  writeStorage(STORAGE_KEYS.colWidths, store.colWidths);
 }

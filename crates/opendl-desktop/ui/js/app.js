@@ -10,8 +10,11 @@ import {
   windowClose,
   windowStartDragging,
   getDiskFree,
-  getPendingIntercepts
+  getPendingIntercepts,
+  getAllDrives,
+  listQueues
 } from "./api.js";
+import { openMoveQueueDialog } from "./dialogs.js";
 import {
   store,
   subscribe,
@@ -77,11 +80,16 @@ function renderSidebarCountsAndQueues() {
         const isActive = store.activeQueueFilter === q;
         return `
           <li>
-            <button type="button" class="nav-item ${isActive ? "is-active" : ""}" data-queue="${q}" data-tooltip="${q}">
-              <span class="nav-icon">${getIcon("listTree")}</span>
-              <span class="nav-label">${q}</span>
-              <span class="nav-count ${qCount === 0 ? "is-zero" : ""}">${qCount}</span>
-            </button>
+            <div class="nav-item-queue-row">
+              <button type="button" class="nav-item ${isActive ? "is-active" : ""}" data-queue="${q}" data-tooltip="${q}">
+                <span class="nav-icon">${getIcon("listTree")}</span>
+                <span class="nav-label">${q}</span>
+                <span class="nav-count ${qCount === 0 ? "is-zero" : ""}">${qCount}</span>
+              </button>
+              <button type="button" class="btn-queue-edit" data-queue-edit="${q}" data-tooltip="Configure Queue" title="Configure Queue">
+                ${getIcon("settings")}
+              </button>
+            </div>
           </li>
         `;
       })
@@ -154,15 +162,40 @@ async function pollProgressTick() {
   const progressMap = await getAllProgress();
   let totalSpeed = 0;
 
+  let hasMissing = false;
+  for (const id of progressMap.keys()) {
+    if (!store.taskMap.has(id)) {
+      hasMissing = true;
+      break;
+    }
+  }
+  if (hasMissing) {
+    await refreshTaskList();
+  }
+
   store.tasks = store.tasks.map((existing) => {
     const patch = progressMap.get(existing.id);
     const updated = patch ? normalizeTask(existing, patch) : existing;
+
+    // Smooth rolling average speed and dynamic ETA
+    if (updated.status === "downloading") {
+      const prevRolling = existing.rollingSpeed || existing.speed || 0;
+      const curSpeed = updated.speed || 0;
+      const alpha = 0.3;
+      updated.rollingSpeed = prevRolling > 0 ? (alpha * curSpeed + (1 - alpha) * prevRolling) : curSpeed;
+
+      if (updated.size && updated.downloaded < updated.size) {
+        const effectiveSpeed = updated.rollingSpeed > 512 ? updated.rollingSpeed : curSpeed;
+        if (effectiveSpeed > 512) {
+          updated.eta = Math.max(1, Math.ceil((updated.size - updated.downloaded) / effectiveSpeed));
+        }
+      }
+      totalSpeed += updated.speed || 0;
+    }
+
     store.taskMap.set(updated.id, updated);
     seedOrUpdateWireLogs(updated);
     pushTaskSpeedSample(updated.id, updated.speed || 0);
-    if (updated.status === "downloading") {
-      totalSpeed += updated.speed || 0;
-    }
     return updated;
   });
 
@@ -209,22 +242,30 @@ function syncNavSelection() {
 async function updateStorageEstimate() {
   const diskVal = document.getElementById("status-disk-val");
   if (!diskVal) return;
+
+  try {
+    const drives = await getAllDrives();
+    if (Array.isArray(drives) && drives.length > 0) {
+      const enabled = store.settings?.storage?.enabledDrives || drives.map((d) => d.letter);
+      const filtered = drives.filter((d) => enabled.includes(d.letter));
+      const targetDrives = filtered.length > 0 ? filtered : drives;
+
+      const parts = targetDrives.map((d) => {
+        const letter = d.letter.replace(/\\$/, "");
+        return `${letter}: ${formatBytes(d.free_bytes)}`;
+      });
+
+      diskVal.textContent = parts.join(" · ");
+      return;
+    }
+  } catch (_) {}
+
   const freeBytes = await getDiskFree();
   if (typeof freeBytes === "number" && freeBytes > 0) {
     diskVal.textContent = formatBytes(freeBytes);
     return;
   }
-  if (navigator.storage && typeof navigator.storage.estimate === "function") {
-    try {
-      const est = await navigator.storage.estimate();
-      if (est && typeof est.quota === "number" && typeof est.usage === "number") {
-        const free = Math.max(0, est.quota - est.usage);
-        diskVal.textContent = formatBytes(free);
-      }
-    } catch {
-      diskVal.textContent = "UNAVAILABLE";
-    }
-  }
+  diskVal.textContent = "UNAVAILABLE";
 }
 
 async function initApp() {
@@ -287,7 +328,21 @@ async function initApp() {
     notify("view");
   });
 
-  document.getElementById("nav-queues")?.addEventListener("click", (e) => {
+  document.getElementById("nav-queues")?.addEventListener("click", async (e) => {
+    const editBtn = e.target.closest("[data-queue-edit]");
+    if (editBtn) {
+      e.stopPropagation();
+      const qName = editBtn.getAttribute("data-queue-edit");
+      try {
+        const queues = await listQueues();
+        const match = queues.find((q) => q.name === qName || q.id === qName) || { name: qName, id: qName };
+        openQueueDialog(match);
+      } catch (_) {
+        openQueueDialog({ name: qName, id: qName });
+      }
+      return;
+    }
+
     const btn = e.target.closest("[data-queue]");
     if (!btn) return;
     const q = btn.getAttribute("data-queue");
@@ -374,6 +429,32 @@ async function initApp() {
   await pollProgressTick();
   updateStorageEstimate();
 
+  // Wire move to queue button
+  document.getElementById("btn-move-queue")?.addEventListener("click", () => {
+    const ids = Array.from(store.selectedIds);
+    if (ids.length > 0) {
+      openMoveQueueDialog(ids);
+    }
+  });
+
+  window.addEventListener("opendl_drives_changed", () => {
+    updateStorageEstimate();
+  });
+
+  // Local 1-second countdown tick for running downloads so ETA counts down smoothly
+  setInterval(() => {
+    let changed = false;
+    for (const t of store.tasks) {
+      if (t.status === "downloading" && typeof t.eta === "number" && t.eta > 1) {
+        t.eta -= 1;
+        changed = true;
+      }
+    }
+    if (changed) {
+      renderTaskTable();
+    }
+  }, 1000);
+
   // Process any downloads intercepted before window finish loaded
   try {
     const pending = await getPendingIntercepts();
@@ -410,10 +491,17 @@ if (typeof window !== "undefined") {
   };
 }
 
+window.__onBrowserDownloadRequest = (payload) => {
+  if (payload && payload.url) {
+    openAddDialog(payload.url, payload.filename || "", payload);
+  }
+};
+
 if (typeof window !== "undefined" && window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen("browser_download_request", (event) => {
     if (event.payload && event.payload.url) {
-      openAddDialog(event.payload.url, event.payload.filename || "");
+      openAddDialog(event.payload.url, event.payload.filename || "", event.payload);
     }
   });
 }
+

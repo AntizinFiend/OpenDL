@@ -35,6 +35,10 @@ fn test_database_crud_operations() {
         updated_at: 1000,
         queue_id: "main".to_string(),
         queue_order: 0,
+        referrer: Some("https://example.com/download".to_string()),
+        cookies: Some("ukey=123".to_string()),
+        user_agent: Some("TestUA".to_string()),
+        custom_headers: None,
     };
 
     db.insert_task(&record).unwrap();
@@ -42,6 +46,10 @@ fn test_database_crud_operations() {
     let fetched = db.get_task(task_id).unwrap().expect("Task should exist");
     assert_eq!(fetched.filename, "file.zip");
     assert_eq!(fetched.status, TaskStatus::Queued);
+    assert_eq!(fetched.referrer.as_deref(), Some("https://example.com/download"));
+    assert_eq!(fetched.cookies.as_deref(), Some("ukey=123"));
+    assert_eq!(fetched.user_agent.as_deref(), Some("TestUA"));
+
 
     db.update_task_progress(task_id, 5000000, TaskStatus::Downloading).unwrap();
     let updated = db.get_task(task_id).unwrap().unwrap();

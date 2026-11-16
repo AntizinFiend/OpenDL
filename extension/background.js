@@ -21,10 +21,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!url) return;
 
   const referrer = info.pageUrl || (tab && tab.url) || "";
-  const cookies = await getCookiesForUrl(url);
+  const cookies = await getCookiesForUrl(url, referrer);
 
   let suggestedFilename = undefined;
-  if (info.srcUrl && tab && tab.title) {
+  if (url.startsWith("magnet:")) {
+    try {
+      const match = url.match(/dn=([^&]+)/i);
+      if (match && match[1]) suggestedFilename = decodeURIComponent(match[1].replace(/\+/g, " "));
+    } catch (_) {}
+    if (!suggestedFilename) suggestedFilename = "Magnet Download";
+  } else if (info.srcUrl && tab && tab.title) {
     let cleanTitle = tab.title.split(" - YouTube")[0].trim();
     if (cleanTitle) {
       suggestedFilename = cleanTitle;
@@ -37,13 +43,19 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     filename: suggestedFilename,
     referrer: referrer,
     cookies: cookies,
-    user_agent: navigator.userAgent
+    user_agent: navigator.userAgent,
+    headers: {
+      "Referer": referrer,
+      "User-Agent": navigator.userAgent,
+      "Cookie": cookies,
+      "Accept-Language": navigator.language || "en-US,en;q=0.9"
+    }
   });
 });
 
-// 2. In-Page Content Script Click Messages
+// 2. In-Page Content Script Magnet Link Click Messages
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg && msg.type === "PAGE_LINK_CLICKED") {
+  if (msg && (msg.type === "MAGNET_LINK_CLICKED" || msg.type === "PAGE_LINK_CLICKED")) {
     chrome.storage.local.get(["intercept_enabled"], async (res) => {
       const enabled = res.intercept_enabled !== false;
       if (!enabled) {
@@ -51,15 +63,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
-      const cookies = await getCookiesForUrl(msg.url);
+      const referrer = msg.referrer || (sender.tab && sender.tab.url) || "";
+      const cookies = await getCookiesForUrl(msg.url, referrer);
       let cleanSuggested = (msg.suggestedFilename || "").split(/[/\\]/).pop() || undefined;
+
       triggerOpenDlDownload({
         action: "download",
         url: msg.url,
         filename: cleanSuggested,
-        referrer: msg.referrer || (sender.tab && sender.tab.url) || "",
+        referrer: referrer,
         cookies: cookies,
-        user_agent: navigator.userAgent
+        user_agent: navigator.userAgent,
+        headers: {
+          "Referer": referrer,
+          "User-Agent": navigator.userAgent,
+          "Cookie": cookies,
+          "Accept-Language": navigator.language || "en-US,en;q=0.9"
+        }
       });
 
       sendResponse({ intercepted: true });
@@ -69,6 +89,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // 3. Browser Download Interception: Determining Filename (Canonical Chromium hook)
+// Intercepts the fully-resolved HTTP response (after server redirects, scripts, auth, and cookies)
 if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
   chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
     chrome.storage.local.get(["intercept_enabled"], async (res) => {
@@ -102,15 +123,23 @@ if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
 
       let rawFilename = item.filename || "";
       let cleanFilename = rawFilename ? rawFilename.split(/[/\\]/).pop() : undefined;
-      const cookies = await getCookiesForUrl(url);
+      const referrer = item.referrer || "";
+      const cookies = await getCookiesForUrl(url, referrer);
+
       triggerOpenDlDownload({
         action: "download",
         url: url,
         filename: cleanFilename,
-        referrer: item.referrer || "",
+        referrer: referrer,
         cookies: cookies,
         user_agent: navigator.userAgent,
-        total_size: (item.fileSize && item.fileSize > 0) ? item.fileSize : undefined
+        total_size: (item.fileSize && item.fileSize > 0) ? item.fileSize : undefined,
+        headers: {
+          "Referer": referrer,
+          "User-Agent": navigator.userAgent,
+          "Cookie": cookies,
+          "Accept-Language": navigator.language || "en-US,en;q=0.9"
+        }
       });
     });
 
@@ -118,13 +147,46 @@ if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
   });
 }
 
-async function getCookiesForUrl(url) {
-  try {
-    const cookies = await chrome.cookies.getAll({ url: url });
-    return cookies.map(c => `${c.name}=${c.value}`).join("; ");
-  } catch (e) {
-    return "";
+// Deep cookie extraction across target URL, referrer, and parent domain
+async function getCookiesForUrl(url, referrer = "") {
+  const cookieMap = new Map();
+
+  async function collectCookies(targetUrl) {
+    if (!targetUrl || (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://"))) return;
+    try {
+      // 1. Direct URL cookies
+      const cookies = await chrome.cookies.getAll({ url: targetUrl });
+      for (const c of cookies) {
+        cookieMap.set(c.name, c.value);
+      }
+
+      // 2. Root domain cookies (e.g. .mediafire.com for download123.mediafire.com)
+      try {
+        const parsed = new URL(targetUrl);
+        const parts = parsed.hostname.split(".");
+        if (parts.length >= 2) {
+          const rootDomain = parts.slice(-2).join(".");
+          const domainCookies = await chrome.cookies.getAll({ domain: rootDomain });
+          for (const c of domainCookies) {
+            if (!cookieMap.has(c.name)) {
+              cookieMap.set(c.name, c.value);
+            }
+          }
+        }
+      } catch (_) {}
+    } catch (_) {}
   }
+
+  await collectCookies(url);
+  if (referrer) {
+    await collectCookies(referrer);
+  }
+
+  const cookieList = [];
+  for (const [name, val] of cookieMap.entries()) {
+    cookieList.push(`${name}=${val}`);
+  }
+  return cookieList.join("; ");
 }
 
 function triggerOpenDlDownload(payload) {
@@ -139,4 +201,28 @@ function triggerOpenDlDownload(payload) {
   } catch (e) {
     console.error("Failed to send native message to OpenDL:", e);
   }
+}
+
+// 4. Browser Magnet Link Navigation Interception
+if (chrome.webNavigation && chrome.webNavigation.onBeforeNavigate) {
+  chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+    if (details.url && details.url.startsWith("magnet:")) {
+      chrome.storage.local.get(["intercept_enabled"], async (res) => {
+        if (res.intercept_enabled === false) return;
+        let suggested = "Magnet Download";
+        try {
+          const match = details.url.match(/dn=([^&]+)/i);
+          if (match && match[1]) suggested = decodeURIComponent(match[1].replace(/\+/g, " "));
+        } catch (_) {}
+        triggerOpenDlDownload({
+          action: "download",
+          url: details.url,
+          filename: suggested,
+          referrer: "",
+          cookies: "",
+          user_agent: navigator.userAgent
+        });
+      });
+    }
+  });
 }

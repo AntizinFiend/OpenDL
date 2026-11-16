@@ -17,9 +17,45 @@ pub async fn probe_url(client: &Client, options: &DownloadOptions) -> Result<Dow
         }
     }
 
+    // Default browser headers if not present
+    if !headers.contains_key(reqwest::header::USER_AGENT) {
+        if let Ok(v) = HeaderValue::from_str(crate::resolver::DEFAULT_BROWSER_UA) {
+            headers.insert(reqwest::header::USER_AGENT, v);
+        }
+    }
+    if !headers.contains_key(reqwest::header::ACCEPT) {
+        if let Ok(v) = HeaderValue::from_str("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8") {
+            headers.insert(reqwest::header::ACCEPT, v);
+        }
+    }
+
+    // Check if URL can be resolved to a direct stream (e.g. Mediafire, Google Drive, Dropbox)
+    let (target_url, resolved_referrer, resolved_cookies) = if crate::resolver::is_mediafire_url(&options.url)
+        || crate::resolver::is_google_drive_url(&options.url)
+        || crate::resolver::is_dropbox_url(&options.url)
+    {
+        match crate::resolver::resolve_download_url(&options.url).await {
+            Ok(resolved) => {
+                info!(original = %options.url, direct = %resolved.direct_url, "Resolved direct download URL via engine resolver");
+                for (k, v) in &resolved.headers {
+                    if let (Ok(hname), Ok(hval)) = (HeaderName::from_str(k), HeaderValue::from_str(v)) {
+                        headers.entry(hname).or_insert(hval);
+                    }
+                }
+                (resolved.direct_url, resolved.referrer, resolved.cookies)
+            }
+            Err(e) => {
+                debug!(error = %e, "Resolver failed to extract direct link; proceeding with original URL");
+                (options.url.clone(), None, None)
+            }
+        }
+    } else {
+        (options.url.clone(), None, None)
+    };
+
     // Try HEAD request first
     let head_res = client
-        .head(&options.url)
+        .head(&target_url)
         .headers(headers.clone())
         .send()
         .await;
@@ -60,6 +96,10 @@ pub async fn probe_url(client: &Client, options: &DownloadOptions) -> Result<Dow
                 &final_url,
             );
 
+            let is_webpage = content_type.map(|c| c.contains("text/html")).unwrap_or(false)
+                && (suggested_filename == "download.bin" || suggested_filename.ends_with(".html") || suggested_filename.ends_with(".php"))
+                && content_length.map(|l| l < 500_000).unwrap_or(true);
+
             // If HEAD didn't explicitly say accept-ranges or didn't provide content-length, verify with ranged GET probe
             if content_length.is_none() || !accepts_ranges {
                 debug!("HEAD response inconclusive for range support, performing ranged GET probe (bytes=0-0)");
@@ -76,6 +116,9 @@ pub async fn probe_url(client: &Client, options: &DownloadOptions) -> Result<Dow
                         } else {
                             ranged_meta.suggested_filename
                         },
+                        referrer: resolved_referrer.or(ranged_meta.referrer),
+                        cookies: resolved_cookies.or(ranged_meta.cookies),
+                        is_webpage: ranged_meta.is_webpage,
                     });
                 }
             }
@@ -88,22 +131,28 @@ pub async fn probe_url(client: &Client, options: &DownloadOptions) -> Result<Dow
                 etag,
                 last_modified,
                 suggested_filename,
+                referrer: resolved_referrer,
+                cookies: resolved_cookies,
+                is_webpage,
             })
         }
         _ => {
             // HEAD failed or server does not support HEAD. Fallback directly to ranged GET probe.
             debug!("HEAD failed or returned non-success; falling back to ranged GET probe");
-            let ranged_meta = probe_ranged_get(client, &options.url, &headers)
+            let ranged_meta = probe_ranged_get(client, &target_url, &headers)
                 .await
                 .context("Ranged GET probe failed")?;
 
             Ok(DownloadMetadata {
                 url: options.url.clone(),
+                referrer: resolved_referrer.or(ranged_meta.referrer),
+                cookies: resolved_cookies.or(ranged_meta.cookies),
                 ..ranged_meta
             })
         }
     }
 }
+
 
 async fn probe_ranged_get(client: &Client, url: &str, base_headers: &HeaderMap) -> Result<DownloadMetadata> {
     let mut headers = base_headers.clone();
@@ -134,6 +183,9 @@ async fn probe_ranged_get(client: &Client, url: &str, base_headers: &HeaderMap) 
         &final_url,
     );
 
+    let is_webpage = content_type.map(|c| c.contains("text/html")).unwrap_or(false)
+        && (suggested_filename == "download.bin" || suggested_filename.ends_with(".html") || suggested_filename.ends_with(".php"));
+
     if status == reqwest::StatusCode::PARTIAL_CONTENT {
         // HTTP 206 Partial Content -> Range is supported!
         let total_size = res_headers
@@ -149,6 +201,9 @@ async fn probe_ranged_get(client: &Client, url: &str, base_headers: &HeaderMap) 
             etag,
             last_modified,
             suggested_filename,
+            referrer: None,
+            cookies: None,
+            is_webpage,
         })
     } else {
         // HTTP 200 OK -> Server ignored range, only single stream supported
@@ -165,8 +220,12 @@ async fn probe_ranged_get(client: &Client, url: &str, base_headers: &HeaderMap) 
             etag,
             last_modified,
             suggested_filename,
+            referrer: None,
+            cookies: None,
+            is_webpage,
         })
     }
+
 }
 
 fn parse_content_range_total(header: &str) -> Option<u64> {

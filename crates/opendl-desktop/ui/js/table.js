@@ -5,10 +5,11 @@ import {
   formatSpeedParts,
   formatEta,
   setDockCollapsed,
-  notify
+  notify,
+  setColumnWidths
 } from "./state.js";
 import { getIcon } from "./icons.js";
-import { pauseTask, resumeTask, openPath, showInFolder } from "./api.js";
+import { pauseTask, resumeTask, openPath, showInFolder, reorderQueueTasks } from "./api.js";
 
 const ROW_HEIGHT = 46;
 const GROUP_HEADER_HEIGHT = 26;
@@ -93,52 +94,83 @@ function buildDisplayItems(tasks) {
   return { items, totalHeight: offset };
 }
 
+const DEFAULT_GRID_COLS = ["44px", "minmax(180px, 1.2fr)", "92px", "minmax(220px, 1.4fr)", "96px", "90px", "100px"];
+
+function wireColumnResizing(tableEl, headerEl) {
+  let activeCols = [...DEFAULT_GRID_COLS];
+
+  try {
+    const saved = JSON.parse(localStorage.getItem("opendl_col_widths_v2") || "[]");
+    if (Array.isArray(saved) && saved.length === DEFAULT_GRID_COLS.length) {
+      activeCols = saved;
+      tableEl.style.setProperty("--grid-cols-all", activeCols.join(" "));
+    }
+  } catch (_) {}
+
+  const resizers = headerEl.querySelectorAll(".col-resizer");
+  resizers.forEach((resizer) => {
+    resizer.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const colIdx = parseInt(resizer.getAttribute("data-col-idx"), 10);
+      const th = resizer.closest(".th-cell, .th-select-cell") || resizer.parentElement;
+      const startX = e.clientX;
+      const startWidth = th.getBoundingClientRect().width;
+
+      resizer.classList.add("is-active");
+
+      const onMouseMove = (moveEvent) => {
+        const diff = moveEvent.clientX - startX;
+        const newWidth = Math.max(50, Math.round(startWidth + diff));
+        activeCols[colIdx] = `${newWidth}px`;
+        tableEl.style.setProperty("--grid-cols-all", activeCols.join(" "));
+      };
+
+      const onMouseUp = () => {
+        resizer.classList.remove("is-active");
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+
+        try {
+          localStorage.setItem("opendl_col_widths_v2", JSON.stringify(activeCols));
+        } catch (_) {}
+      };
+
+      document.body.style.cursor = "col-resize";
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+  });
+}
+
 function renderHeaderIfNeeded(tableEl, headerEl, tasks) {
   if (currentHeaderView !== store.view) {
     currentHeaderView = store.view;
     tableEl.setAttribute("data-view-cols", store.view);
-    const colsByView = {
-      all: [
-        { label: "#", cls: "th-select-cell" },
-        { label: "NAME", cls: "th-cell" },
-        { label: "SIZE", cls: "th-cell th-num" },
-        { label: "PROGRESS", cls: "th-cell" },
-        { label: "SPEED", cls: "th-cell th-num" },
-        { label: "ETA", cls: "th-cell th-num" },
-        { label: "CATEGORY", cls: "th-cell" }
-      ],
-      downloading: [
-        { label: "#", cls: "th-select-cell" },
-        { label: "NAME", cls: "th-cell" },
-        { label: "PROGRESS", cls: "th-cell" },
-        { label: "SPEED", cls: "th-cell th-num" },
-        { label: "ETA", cls: "th-cell th-num" }
-      ],
-      completed: [
-        { label: "#", cls: "th-select-cell" },
-        { label: "NAME", cls: "th-cell" },
-        { label: "SIZE", cls: "th-cell th-num" },
-        { label: "FINISHED AT", cls: "th-cell th-num" },
-        { label: "CATEGORY", cls: "th-cell" }
-      ],
-      queued: [
-        { label: "#", cls: "th-select-cell" },
-        { label: "NAME", cls: "th-cell" },
-        { label: "SIZE", cls: "th-cell th-num" },
-        { label: "QUEUE", cls: "th-cell" },
-        { label: "POS", cls: "th-cell th-num" }
-      ]
-    };
 
-    const cols = colsByView[store.view] || colsByView.all;
+    const cols = [
+      { label: "#", cls: "th-select-cell" },
+      { label: "NAME", cls: "th-cell" },
+      { label: "SIZE", cls: "th-cell th-num" },
+      { label: "PROGRESS", cls: "th-cell" },
+      { label: "SPEED", cls: "th-cell th-num" },
+      { label: "ETA", cls: "th-cell th-num" },
+      { label: "CATEGORY", cls: "th-cell" }
+    ];
+
     headerEl.innerHTML = cols
       .map((c, idx) => {
+        const resizer = (idx > 0 && idx < cols.length - 1) ? `<div class="col-resizer" data-col-idx="${idx}"></div>` : "";
         if (idx === 0) {
           return `<div class="${c.cls}" role="columnheader"><input type="checkbox" class="header-checkbox" aria-label="Select all tasks" /></div>`;
         }
-        return `<div class="${c.cls}" role="columnheader">${c.label}</div>`;
+        return `<div class="${c.cls}" role="columnheader">${c.label}${resizer}</div>`;
       })
       .join("");
+
+    wireColumnResizing(tableEl, headerEl);
 
     const cb = headerEl.querySelector(".header-checkbox");
     cb?.addEventListener("change", (e) => {
@@ -234,29 +266,12 @@ function createRowElement(view) {
     </div>
   `;
 
-  if (view === "all") {
-    row.innerHTML = `${regMarks}${indexCol}${nameCol}
-      <div class="td-num cell-size" role="gridcell"></div>
-      ${progressCol}
-      <div class="td-num cell-speed" role="gridcell"></div>
-      <div class="td-num cell-eta" role="gridcell"></div>
-      <div class="th-cell cell-cat" role="gridcell"></div>`;
-  } else if (view === "downloading") {
-    row.innerHTML = `${regMarks}${indexCol}${nameCol}
-      ${progressCol}
-      <div class="td-num cell-speed" role="gridcell"></div>
-      <div class="td-num cell-eta" role="gridcell"></div>`;
-  } else if (view === "completed") {
-    row.innerHTML = `${regMarks}${indexCol}${nameCol}
-      <div class="td-num cell-size" role="gridcell"></div>
-      <div class="td-num cell-finished-at" role="gridcell"></div>
-      <div class="th-cell cell-cat" role="gridcell"></div>`;
-  } else if (view === "queued") {
-    row.innerHTML = `${regMarks}${indexCol}${nameCol}
-      <div class="td-num cell-size" role="gridcell"></div>
-      <div class="th-cell cell-queue" role="gridcell"></div>
-      <div class="td-num cell-pos" role="gridcell"></div>`;
-  }
+  row.innerHTML = `${regMarks}${indexCol}${nameCol}
+    <div class="td-num cell-size" role="gridcell"></div>
+    ${progressCol}
+    <div class="td-num cell-speed" role="gridcell"></div>
+    <div class="td-num cell-eta" role="gridcell"></div>
+    <div class="th-cell cell-cat" role="gridcell"></div>`;
 
   return row;
 }
@@ -309,7 +324,7 @@ function patchProgressCell(row, task) {
     drawMiniRowSparkline(spark, store.taskSparklines.get(task.id));
     pctEl.textContent = `${pct}%`;
     bytesEl.textContent = task.size ? `${formatBytes(task.downloaded)} / ${formatBytes(task.size)}` : formatBytes(task.downloaded);
-    etaInlineEl.textContent = task.eta != null ? `${formatEta(task.eta)} left` : "";
+    etaInlineEl.textContent = ""; // Clear inline ETA to prevent collision with SPEED column
   } else if (task.status === "queued") {
     word.textContent = `WAITING IN ${(task.queue || "MAIN QUEUE").toUpperCase()}`;
     spark.classList.add("is-hidden");
@@ -363,6 +378,7 @@ function patchRowElement(row, item) {
   const { task, index, queuePos, top } = item;
   row.style.transform = `translateY(${top}px)`;
   row.dataset.taskId = task.id;
+  row.draggable = true;
 
   const isSelected = store.selectedIds.has(task.id);
   row.classList.toggle("is-selected", isSelected);
@@ -420,16 +436,36 @@ function patchRowElement(row, item) {
     if (task.status === "downloading" && task.speed > 0) {
       const sp = formatSpeedParts(task.speed);
       speedEl.textContent = `${sp.value} ${sp.unit}`;
+    } else if (task.isSeeding && (task.uploadSpeed || 0) > 0) {
+      const sp = formatSpeedParts(task.uploadSpeed);
+      speedEl.textContent = `up ${sp.value} ${sp.unit}`;
+    } else if (task.status === "finished" && task.avgSpeed) {
+      const sp = formatSpeedParts(task.avgSpeed);
+      speedEl.textContent = `avg ${sp.value} ${sp.unit.replace("/S", "/s")}`;
     } else {
       speedEl.textContent = "--";
     }
   }
 
   const etaEl = row.querySelector(".cell-eta");
-  if (etaEl) etaEl.textContent = task.status === "downloading" ? formatEta(task.eta) : "--";
+  if (etaEl) {
+    if (task.status === "downloading") {
+      etaEl.textContent = task.speed > 0 && task.eta != null ? formatEta(task.eta) : "--";
+    } else if (task.status === "finished") {
+      etaEl.textContent = task.completedAt
+        ? new Date(task.completedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+        : "Done";
+    } else if (task.status === "paused") {
+      etaEl.textContent = "Paused";
+    } else if (task.status === "queued") {
+      etaEl.textContent = `#${String(queuePos || index).padStart(2, "0")}`;
+    } else {
+      etaEl.textContent = "--";
+    }
+  }
 
   const catEl = row.querySelector(".cell-cat");
-  if (catEl) catEl.textContent = task.category || "--";
+  if (catEl) catEl.textContent = task.category || "General";
 
   const finEl = row.querySelector(".cell-finished-at");
   if (finEl) {
@@ -515,6 +551,94 @@ export function initTableInteractions(onContextMenu) {
   const viewportEl = document.getElementById("table-viewport");
   const rowsHost = document.getElementById("table-rows");
   const tableEl = document.getElementById("task-table");
+
+  let draggedTaskId = null;
+
+  rowsHost?.addEventListener("dragstart", (e) => {
+    const rowEl = e.target.closest(".task-row");
+    if (!rowEl) return;
+    draggedTaskId = rowEl.dataset.taskId;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", draggedTaskId);
+    rowEl.classList.add("is-dragging");
+  });
+
+  rowsHost?.addEventListener("dragend", () => {
+    draggedTaskId = null;
+    rowsHost.querySelectorAll(".task-row").forEach((r) => {
+      r.classList.remove("is-dragging", "is-drag-over-top", "is-drag-over-bottom");
+    });
+  });
+
+  rowsHost?.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const rowEl = e.target.closest(".task-row");
+    if (!rowEl || rowEl.dataset.taskId === draggedTaskId) return;
+
+    const rect = rowEl.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    if (e.clientY < midY) {
+      rowEl.classList.add("is-drag-over-top");
+      rowEl.classList.remove("is-drag-over-bottom");
+    } else {
+      rowEl.classList.add("is-drag-over-bottom");
+      rowEl.classList.remove("is-drag-over-top");
+    }
+  });
+
+  rowsHost?.addEventListener("dragleave", (e) => {
+    const rowEl = e.target.closest(".task-row");
+    if (!rowEl) return;
+    rowEl.classList.remove("is-drag-over-top", "is-drag-over-bottom");
+  });
+
+  rowsHost?.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    const rowEl = e.target.closest(".task-row");
+    if (!rowEl) return;
+    const targetTaskId = rowEl.dataset.taskId;
+    const sourceTaskId = draggedTaskId || e.dataTransfer.getData("text/plain");
+
+    rowsHost.querySelectorAll(".task-row").forEach((r) => {
+      r.classList.remove("is-dragging", "is-drag-over-top", "is-drag-over-bottom");
+    });
+
+    if (!sourceTaskId || !targetTaskId || sourceTaskId === targetTaskId) return;
+
+    const tasks = getFilteredTasks();
+    const fromIdx = tasks.findIndex((t) => t.id === sourceTaskId);
+    const toIdx = tasks.findIndex((t) => t.id === targetTaskId);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    const rect = rowEl.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const placeAfter = e.clientY >= midY;
+
+    const [moved] = tasks.splice(fromIdx, 1);
+    const insertIdx = placeAfter ? (fromIdx < toIdx ? toIdx : toIdx + 1) : (fromIdx < toIdx ? toIdx - 1 : toIdx);
+    tasks.splice(Math.max(0, Math.min(tasks.length, insertIdx)), 0, moved);
+
+    const orderedIds = tasks.map((t) => t.id);
+    store.tasks.sort((a, b) => {
+      const idxA = orderedIds.indexOf(a.id);
+      const idxB = orderedIds.indexOf(b.id);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      return 0;
+    });
+
+    const queueName = moved.queue || "Main Queue";
+    const queueTasks = store.tasks.filter((t) => t.queue === queueName);
+    const queueTaskIds = queueTasks.map((t) => t.id);
+
+    try {
+      await reorderQueueTasks(queueName, queueTaskIds);
+    } catch (err) {
+      console.warn("reorderQueueTasks error:", err);
+    }
+
+    notify("tasks");
+  });
 
   viewportEl?.addEventListener("scroll", () => {
     renderTaskTable();

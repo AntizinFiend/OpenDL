@@ -5,7 +5,8 @@ import {
   setPiezoEnabled,
   playPiezo,
   decodeTitleEffect,
-  notify
+  notify,
+  formatBytes
 } from "./state.js";
 import {
   addTask,
@@ -21,8 +22,12 @@ import {
   createQueue,
   updateQueue,
   abortShutdown,
-  listQueues
+  listQueues,
+  moveTaskToQueue,
+  selectTorrentFile,
+  inspectTorrentFile
 } from "./api.js";
+import { openSettingsDialog as openTabbedSettings, initSettings } from "./settings.js";
 
 const THEMES = [
   { id: "system", name: "System", bg: "#121210", accent: "#F59E0B" },
@@ -33,8 +38,68 @@ const THEMES = [
 ];
 
 let onTaskChangedCallback = null;
+let currentTorrentData = null;
 
-export function openAddDialog(prefillUrl = "", prefillFilename = "") {
+export async function handleTorrentInspection(torrentPath) {
+  const panel = document.getElementById("torrent-selection-panel");
+  const fileItems = document.getElementById("torrent-file-items");
+  const fileCountBadge = document.getElementById("torrent-file-count");
+  const totalSizeEl = document.getElementById("torrent-total-size");
+  const nameInput = document.getElementById("input-filename");
+  const catSelect = document.getElementById("select-category");
+
+  if (!panel || !fileItems) return;
+
+  try {
+    const data = await inspectTorrentFile(torrentPath);
+    if (!data || !data.files || data.files.length === 0) {
+      panel.classList.add("is-hidden");
+      currentTorrentData = null;
+      return;
+    }
+
+    currentTorrentData = data;
+    if (nameInput && (!nameInput.value || nameInput.value === "download.bin")) {
+      nameInput.value = data.name || torrentPath.split(/[\/\\]/).pop();
+    }
+    if (catSelect) catSelect.value = "Torrents";
+
+    fileCountBadge.textContent = `${data.files.length} files`;
+    totalSizeEl.textContent = formatBytes(data.total_size);
+
+    fileItems.innerHTML = data.files.map((f) => `
+      <div class="torrent-file-row" data-file-index="${f.index}" data-file-name="${(f.path || '').toLowerCase()}">
+        <input type="checkbox" class="torrent-file-checkbox" checked data-file-index="${f.index}" data-file-size="${f.size}" />
+        <span class="torrent-file-name" title="${f.path}">${f.path}</span>
+        <span class="torrent-file-size">${formatBytes(f.size)}</span>
+        <span class="torrent-file-priority">Normal</span>
+      </div>
+    `).join("");
+
+    panel.classList.remove("is-hidden");
+    updateTorrentSelectionSummary();
+  } catch (err) {
+    console.warn("Failed to inspect torrent file:", err);
+    panel.classList.add("is-hidden");
+    currentTorrentData = null;
+  }
+}
+
+export function updateTorrentSelectionSummary() {
+  if (!currentTorrentData) return;
+  const checkboxes = Array.from(document.querySelectorAll(".torrent-file-checkbox"));
+  const checked = checkboxes.filter((cb) => cb.checked);
+  const totalBytes = checked.reduce((acc, cb) => acc + parseInt(cb.getAttribute("data-file-size") || "0", 10), 0);
+  const fileCountBadge = document.getElementById("torrent-file-count");
+  const totalSizeEl = document.getElementById("torrent-total-size");
+  if (fileCountBadge) fileCountBadge.textContent = `${checked.length} / ${checkboxes.length} files`;
+  if (totalSizeEl) totalSizeEl.textContent = formatBytes(totalBytes);
+}
+
+let activeBrowserPayload = null;
+
+export function openAddDialog(prefillUrl = "", prefillFilename = "", browserPayload = null) {
+  activeBrowserPayload = browserPayload || null;
   const backdrop = document.getElementById("dialog-add-backdrop");
   const urlsInput = document.getElementById("input-urls");
   const nameInput = document.getElementById("input-filename");
@@ -64,14 +129,33 @@ export function openAddDialog(prefillUrl = "", prefillFilename = "") {
     const firstLine = prefillUrl.split(/\r?\n/).find((l) => l.trim()) || "";
     if (firstLine.startsWith("http://") || firstLine.startsWith("https://")) {
       probeDownload(firstLine).then((meta) => {
-        if (meta && meta.suggested_filename && meta.suggested_filename !== "download.bin") {
-          if (!nameInput.value || nameInput.value === "download.bin" || nameInput.value.endsWith(".php") || nameInput.value.endsWith(".asp") || !nameInput.value.includes(".")) {
-            nameInput.value = meta.suggested_filename;
-            catSelect.value = detectCategoryFromFilename(meta.suggested_filename);
+        if (meta) {
+          if (meta.final_url && meta.final_url !== firstLine && meta.final_url.startsWith("http")) {
+            urlsInput.value = meta.final_url;
+            if (!activeBrowserPayload) activeBrowserPayload = {};
+            if (meta.referrer) activeBrowserPayload.referrer = meta.referrer;
+            if (meta.cookies) activeBrowserPayload.cookies = meta.cookies;
+          }
+          if (meta.suggested_filename && meta.suggested_filename !== "download.bin") {
+            if (!nameInput.value || nameInput.value === "download.bin" || nameInput.value.endsWith(".php") || nameInput.value.endsWith(".asp") || !nameInput.value.includes(".")) {
+              nameInput.value = meta.suggested_filename;
+              catSelect.value = detectCategoryFromFilename(meta.suggested_filename);
+            }
+          }
+          if (meta.is_webpage) {
+            notify("⚠️ Target appears to be an HTML webpage. Use OpenDL browser extension or check link.");
           }
         }
       }).catch(() => {});
     }
+  }
+
+  const torrentPanel = document.getElementById("torrent-selection-panel");
+  torrentPanel?.classList.add("is-hidden");
+  currentTorrentData = null;
+
+  if (prefillUrl && prefillUrl.toLowerCase().endsWith(".torrent")) {
+    handleTorrentInspection(prefillUrl);
   }
 
   backdrop.classList.remove("is-hidden");
@@ -79,20 +163,9 @@ export function openAddDialog(prefillUrl = "", prefillFilename = "") {
   urlsInput.focus();
 }
 
-export function openSettingsDialog() {
-  const backdrop = document.getElementById("dialog-settings-backdrop");
-  const grid = document.getElementById("theme-picker-grid");
-  const clipToggle = document.getElementById("toggle-clipboard");
-  const piezoToggle = document.getElementById("toggle-piezo");
-  const titleEl = document.getElementById("dialog-settings-title");
-  if (!backdrop || !grid) return;
 
-  renderThemePicker(grid);
-  if (clipToggle) clipToggle.checked = store.clipboardEnabled;
-  if (piezoToggle) piezoToggle.checked = store.piezoEnabled;
-  playPiezo("snap");
-  backdrop.classList.remove("is-hidden");
-  decodeTitleEffect(titleEl, "SYSTEM CONFIGURATION");
+export function openSettingsDialog() {
+  openTabbedSettings();
 }
 
 export function openQueueDialog(queueRecord = null) {
@@ -100,6 +173,7 @@ export function openQueueDialog(queueRecord = null) {
   const editId = document.getElementById("queue-edit-id");
   const nameInput = document.getElementById("queue-name");
   const maxConns = document.getElementById("queue-max-concurrent");
+  const connLimit = document.getElementById("queue-connections-limit");
   const speedLimit = document.getElementById("queue-speed-limit");
   const onFinish = document.getElementById("queue-on-finish");
   const titleEl = document.getElementById("dialog-queue-title");
@@ -110,6 +184,7 @@ export function openQueueDialog(queueRecord = null) {
     if (editId) editId.value = queueRecord.id || "";
     if (nameInput) nameInput.value = queueRecord.name || "";
     if (maxConns) maxConns.value = queueRecord.max_concurrent || 2;
+    if (connLimit) connLimit.value = queueRecord.connections_limit || queueRecord.max_connections || 8;
     if (speedLimit) speedLimit.value = queueRecord.speed_limit_kbps || 0;
     if (onFinish) onFinish.value = queueRecord.on_complete_action || "none";
     decodeTitleEffect(titleEl, "EDIT QUEUE CONFIGURATION");
@@ -117,6 +192,7 @@ export function openQueueDialog(queueRecord = null) {
     if (editId) editId.value = "";
     if (nameInput) nameInput.value = `Queue 0${store.queues.length + 1}`;
     if (maxConns) maxConns.value = 2;
+    if (connLimit) connLimit.value = 8;
     if (speedLimit) speedLimit.value = 0;
     if (onFinish) onFinish.value = "none";
     decodeTitleEffect(titleEl, "NEW QUEUE CONFIGURATION");
@@ -153,6 +229,38 @@ function renderThemePicker(grid) {
   });
 }
 
+export function openMoveQueueDialog(taskIds) {
+  if (!taskIds || taskIds.length === 0) return;
+  const backdrop = document.getElementById("dialog-move-queue-backdrop");
+  const select = document.getElementById("select-move-queue-target");
+  if (!backdrop || !select) return;
+
+  const queues = store.queues && store.queues.length > 0 ? store.queues : ["Main Queue", "Night Queue"];
+  select.innerHTML = queues
+    .map((q) => `<option value="${q}">${q}</option>`)
+    .join("");
+
+  backdrop.classList.remove("is-hidden");
+  const titleEl = document.getElementById("dialog-move-queue-title");
+  if (titleEl) decodeTitleEffect(titleEl, "MOVE TO QUEUE");
+
+  const btnConfirm = document.getElementById("btn-confirm-move-queue");
+  if (btnConfirm) {
+    btnConfirm.onclick = async () => {
+      const targetQueue = select.value;
+      if (!targetQueue) return;
+      for (const id of taskIds) {
+        await moveTaskToQueue(id, targetQueue);
+        const t = store.taskMap.get(id);
+        if (t) t.queue = targetQueue;
+      }
+      backdrop.classList.add("is-hidden");
+      notify("tasks");
+      if (onTaskChangedCallback) await onTaskChangedCallback();
+    };
+  }
+}
+
 export function closeAllDialogs() {
   document.querySelectorAll(".modal-backdrop").forEach((el) => el.classList.add("is-hidden"));
   hideContextMenu();
@@ -187,6 +295,9 @@ export function showContextMenu(x, y, taskId) {
     <li class="context-menu-sep" role="separator"></li>
     <li class="context-menu-item" role="menuitem" data-ctx="remove">
       <span>Remove</span><span class="micro-label">DEL</span>
+    </li>
+    <li class="context-menu-item" role="menuitem" data-ctx="move-queue">
+      <span>Move to queue...</span><span class="micro-label">M</span>
     </li>
     <li class="context-menu-item" role="menuitem" data-ctx="delete-disk">
       <span>Remove and delete file</span><span class="micro-label">SHIFT+DEL</span>
@@ -226,6 +337,9 @@ export function showContextMenu(x, y, taskId) {
       store.tasks = store.tasks.filter((t) => !ids.includes(t.id));
       for (const id of ids) store.taskMap.delete(id);
       if (onTaskChangedCallback) await onTaskChangedCallback();
+    } else if (act === "move-queue") {
+      openMoveQueueDialog(ids);
+      return;
     } else if (act === "delete-disk") {
       for (const id of ids) {
         await deleteTask(id, true);
@@ -245,6 +359,51 @@ export function hideContextMenu() {
 
 export function initDialogs(onTasksAdded) {
   onTaskChangedCallback = onTasksAdded;
+  initSettings();
+
+  const btnBrowseTorrent = document.getElementById("btn-browse-torrent");
+  btnBrowseTorrent?.addEventListener("click", async () => {
+    const torrentPath = await selectTorrentFile();
+    if (torrentPath) {
+      const urlsInput = document.getElementById("input-urls");
+      const nameInput = document.getElementById("input-filename");
+      const catSelect = document.getElementById("select-category");
+      if (urlsInput) urlsInput.value = torrentPath;
+      const fn = torrentPath.split(/[\/\\]/).pop();
+      if (nameInput) nameInput.value = fn;
+      if (catSelect) catSelect.value = "Torrents";
+      await handleTorrentInspection(torrentPath);
+    }
+  });
+
+  document.getElementById("btn-torrent-select-all")?.addEventListener("click", () => {
+    document.querySelectorAll(".torrent-file-checkbox").forEach((cb) => {
+      cb.checked = true;
+    });
+    updateTorrentSelectionSummary();
+  });
+
+  document.getElementById("btn-torrent-select-none")?.addEventListener("click", () => {
+    document.querySelectorAll(".torrent-file-checkbox").forEach((cb) => {
+      cb.checked = false;
+    });
+    updateTorrentSelectionSummary();
+  });
+
+  document.getElementById("input-torrent-filter")?.addEventListener("input", (e) => {
+    const q = (e.target.value || "").trim().toLowerCase();
+    document.querySelectorAll(".torrent-file-row").forEach((row) => {
+      const fn = row.getAttribute("data-file-name") || "";
+      row.style.display = fn.includes(q) ? "" : "none";
+    });
+  });
+
+  document.getElementById("torrent-file-items")?.addEventListener("change", (e) => {
+    if (e.target.classList.contains("torrent-file-checkbox")) {
+      updateTorrentSelectionSummary();
+    }
+  });
+
   document.querySelectorAll("[data-close-modal]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-close-modal");
@@ -266,6 +425,16 @@ export function initDialogs(onTasksAdded) {
     const lines = urlsInput.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     if (lines.length === 1) {
       const url = lines[0];
+      if (url.toLowerCase().endsWith(".torrent")) {
+        handleTorrentInspection(url);
+        return;
+      } else {
+        const panel = document.getElementById("torrent-selection-panel");
+        if (panel && !panel.classList.contains("is-hidden")) {
+          panel.classList.add("is-hidden");
+          currentTorrentData = null;
+        }
+      }
       const detected = detectFilenameFromUrl(url);
       nameInput.value = detected;
       catSelect.value = detectCategoryFromFilename(detected);
@@ -294,6 +463,19 @@ export function initDialogs(onTasksAdded) {
     const queue = document.getElementById("select-queue")?.value || "Main Queue";
     const folder = document.getElementById("input-folder")?.value || "";
 
+    let selectFiles = null;
+    let seedRatio = undefined;
+    const torrentPanel = document.getElementById("torrent-selection-panel");
+    if (currentTorrentData && torrentPanel && !torrentPanel.classList.contains("is-hidden")) {
+      const checkedBoxes = Array.from(document.querySelectorAll(".torrent-file-checkbox:checked"));
+      if (checkedBoxes.length > 0 && checkedBoxes.length < (currentTorrentData.files?.length || 0)) {
+        selectFiles = checkedBoxes.map((cb) => cb.getAttribute("data-file-index")).join(",");
+      }
+      const chkSeed = document.getElementById("chk-torrent-seed");
+      const ratioInput = document.getElementById("input-torrent-ratio");
+      seedRatio = chkSeed?.checked ? parseFloat(ratioInput?.value || "1.0") : 0;
+    }
+
     for (let i = 0; i < lines.length; i++) {
       let customName = lines.length === 1 ? nameInput.value.trim() : "";
       if (customName) {
@@ -305,10 +487,19 @@ export function initDialogs(onTasksAdded) {
         category,
         queue,
         folder,
-        startNow
+        startNow,
+        selectFiles,
+        seedRatio,
+        referrer: activeBrowserPayload?.referrer,
+        cookies: activeBrowserPayload?.cookies,
+        userAgent: activeBrowserPayload?.user_agent || activeBrowserPayload?.userAgent,
+        headers: activeBrowserPayload?.headers
       });
     }
+    activeBrowserPayload = null;
     document.getElementById("dialog-add-backdrop")?.classList.add("is-hidden");
+    torrentPanel?.classList.add("is-hidden");
+    currentTorrentData = null;
     await onTasksAdded?.();
   });
 
@@ -396,6 +587,7 @@ export function initDialogs(onTasksAdded) {
     const editId = document.getElementById("queue-edit-id")?.value;
     const name = document.getElementById("queue-name")?.value.trim();
     const maxConns = parseInt(document.getElementById("queue-max-concurrent")?.value || "2", 10);
+    const connLimit = parseInt(document.getElementById("queue-connections-limit")?.value || "8", 10);
     const speedLimit = parseInt(document.getElementById("queue-speed-limit")?.value || "0", 10);
     const onFinish = document.getElementById("queue-on-finish")?.value || "none";
 

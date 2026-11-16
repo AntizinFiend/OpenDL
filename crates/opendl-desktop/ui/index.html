@@ -183,6 +183,10 @@
               <span data-icon="trash"></span>
               <span>Delete</span>
             </button>
+            <button id="btn-move-queue" class="btn btn-ghost" type="button" title="Move selected to another queue">
+              <span data-icon="layers"></span>
+              <span>Move to queue</span>
+            </button>
           </div>
 
           <button
@@ -307,6 +311,17 @@
               >
                 CONNECTION LOGS
               </button>
+              <button
+                id="tab-btn-torrent"
+                class="dock-tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="tab-panel-torrent"
+                data-tab="torrent"
+              >
+                TORRENT STATS
+              </button>
             </div>
 
             <div class="dock-header-right">
@@ -430,6 +445,178 @@
               </div>
               <div id="wire-log-viewport" class="wire-log-viewport" role="log" aria-live="off"></div>
             </div>
+
+            <div id="tab-panel-torrent" class="dock-tab-panel is-hidden" role="tabpanel" aria-labelledby="tab-btn-torrent">
+              <div class="torrent-dock-container">
+                <div class="torrent-section">
+                  <div class="torrent-section-title micro-label">TRANSFER</div>
+                  <div class="torrent-grid-3col">
+                    <div class="torrent-field-col">
+                      <div class="spec-row">
+                        <span class="micro-label">Time Active:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-time-active" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Downloaded:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-downloaded" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Download Speed:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-down-speed" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Download Limit:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-down-limit" class="spec-val">∞</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Share Ratio:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-share-ratio" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Popularity:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-popularity" class="spec-val">--</span>
+                      </div>
+                    </div>
+
+                    <div class="torrent-field-col">
+                      <div class="spec-row">
+                        <span class="micro-label">ETA:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-eta" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Uploaded:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-uploaded" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Upload Speed:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-up-speed" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Upload Limit:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-up-limit" class="spec-val">∞</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Reannounce In:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-reannounce" class="spec-val">0s</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Seeding State:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-seeding-state" class="spec-val">--</span>
+                      </div>
+                    </div>
+
+                    <div class="torrent-field-col">
+                      <div class="spec-row">
+                        <span class="micro-label">Connections:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-connections" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Seeds:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-seeds" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Peers:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-peers" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Wasted:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-wasted" class="spec-val">0 B</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Last Seen Complete:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ts-last-seen" class="spec-val">--</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="torrent-section" style="margin-top: 10px;">
+                  <div class="torrent-section-title micro-label">INFORMATION</div>
+                  <div class="torrent-grid-3col">
+                    <div class="torrent-field-col">
+                      <div class="spec-row">
+                        <span class="micro-label">Total Size:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ti-total-size" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Added On:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ti-added-on" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Private:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ti-private" class="spec-val">No</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Info Hash v1:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ti-infohash" class="spec-val" style="font-size: 10px; word-break: break-all;">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Info Hash v2:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ti-infohash-v2" class="spec-val">N/A</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Save Path:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ti-save-path" class="spec-val" style="word-break: break-all;">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Comment:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ti-comment" class="spec-val">--</span>
+                      </div>
+                    </div>
+
+                    <div class="torrent-field-col">
+                      <div class="spec-row">
+                        <span class="micro-label">Pieces:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ti-pieces" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Completed On:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ti-completed-on" class="spec-val">--</span>
+                      </div>
+                    </div>
+
+                    <div class="torrent-field-col">
+                      <div class="spec-row">
+                        <span class="micro-label">Created By:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ti-created-by" class="spec-val">--</span>
+                      </div>
+                      <div class="spec-row">
+                        <span class="micro-label">Created On:</span>
+                        <span class="spec-leader" aria-hidden="true"></span>
+                        <span id="ti-created-on" class="spec-val">--</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </main>
@@ -487,7 +674,10 @@
 
       <form id="form-add-download" class="modal-body">
         <div class="form-field">
-          <label for="input-urls" class="micro-label">DOWNLOAD URLS (ONE PER LINE)</label>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label for="input-urls" class="micro-label" style="margin: 0;">DOWNLOAD URLS, MAGNET LINKS OR .TORRENT FILES</label>
+            <button type="button" id="btn-browse-torrent" class="btn btn-ghost btn-xs" style="padding: 2px 8px; font-size: 10px;">Select .torrent file...</button>
+          </div>
           <textarea
             id="input-urls"
             class="mono-textarea block-caret"
@@ -511,6 +701,7 @@
               <option value="Video">Video</option>
               <option value="Music">Music</option>
               <option value="Documents">Documents</option>
+              <option value="Torrents">BitTorrent</option>
             </select>
           </div>
         </div>
@@ -529,12 +720,79 @@
           </div>
         </div>
 
+        <div id="torrent-selection-panel" class="torrent-selection-panel is-hidden">
+          <div class="torrent-sel-divider"></div>
+          <div class="torrent-sel-header">
+            <div class="torrent-sel-meta">
+              <span class="micro-label">TORRENT CONTENT</span>
+              <span id="torrent-file-count" class="torrent-badge">0 files</span>
+              <span id="torrent-total-size" class="mono-val">0 B</span>
+            </div>
+            <div class="torrent-sel-actions">
+              <button type="button" id="btn-torrent-select-all" class="btn btn-ghost btn-xs">Select All</button>
+              <button type="button" id="btn-torrent-select-none" class="btn btn-ghost btn-xs">Select None</button>
+              <input type="text" id="input-torrent-filter" class="mono-input" placeholder="Filter files..." style="width: 140px; height: 24px; font-size: 11px;" />
+            </div>
+          </div>
+
+          <div class="torrent-file-list-wrap">
+            <div class="torrent-file-list-header">
+              <span style="width: 28px;"></span>
+              <span style="flex: 1;">File Name</span>
+              <span style="width: 90px; text-align: right;">Size</span>
+              <span style="width: 70px; text-align: right;">Priority</span>
+            </div>
+            <div id="torrent-file-items" class="torrent-file-items"></div>
+          </div>
+
+          <div class="torrent-options-row">
+            <label class="torrent-checkbox-label">
+              <input type="checkbox" id="chk-torrent-seed" checked />
+              <span>Auto-seed after finish (qBittorrent style)</span>
+            </label>
+            <div class="torrent-seed-ratio-wrap">
+              <label for="input-torrent-ratio" class="micro-label">SEED RATIO:</label>
+              <input type="number" id="input-torrent-ratio" class="mono-input" value="1.0" min="0" max="100" step="0.1" style="width: 60px; height: 22px; font-size: 11px;" />
+            </div>
+          </div>
+        </div>
+
         <footer class="modal-footer">
           <button type="button" class="btn btn-ghost" data-close-modal="dialog-add-backdrop">Cancel</button>
           <button type="submit" id="btn-submit-queue" name="mode" value="queue" class="btn btn-ghost">Add to queue</button>
           <button type="submit" id="btn-submit-now" name="mode" value="now" class="btn btn-primary">Download now</button>
         </footer>
       </form>
+    </div>
+  </div>
+
+  
+  <!-- MOVE TO QUEUE DIALOG -->
+  <div id="dialog-move-queue-backdrop" class="modal-backdrop is-hidden" role="presentation">
+    <div id="dialog-move-queue" class="modal-dialog reg-panel" role="dialog" aria-modal="true" style="width: 420px;">
+      <span class="reg-mark reg-tl" aria-hidden="true"></span>
+      <span class="reg-mark reg-tr" aria-hidden="true"></span>
+      <span class="reg-mark reg-bl" aria-hidden="true"></span>
+      <span class="reg-mark reg-br" aria-hidden="true"></span>
+
+      <header class="modal-header">
+        <h2 id="dialog-move-queue-title" class="panel-title" data-decode="MOVE TO QUEUE">MOVE TO QUEUE</h2>
+        <button type="button" class="icon-btn-sm" data-close-modal="dialog-move-queue-backdrop" data-tooltip="Close (Esc)" aria-label="Close dialog">
+          <span data-icon="close"></span>
+        </button>
+      </header>
+
+      <div class="modal-body">
+        <div class="form-field">
+          <label for="select-move-queue-target" class="micro-label">SELECT DESTINATION QUEUE</label>
+          <select id="select-move-queue-target" class="mono-select"></select>
+        </div>
+      </div>
+
+      <footer class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close-modal="dialog-move-queue-backdrop">Cancel</button>
+        <button type="button" id="btn-confirm-move-queue" class="btn btn-primary">Move Download</button>
+      </footer>
     </div>
   </div>
 
@@ -627,13 +885,19 @@
           </div>
         </div>
 
-        <div class="form-field">
-          <label for="queue-on-finish" class="micro-label">WHEN QUEUE FINISHES</label>
-          <select id="queue-on-finish" class="mono-select">
-            <option value="none">Do nothing</option>
-            <option value="sleep">Put computer to sleep</option>
-            <option value="shutdown">Shut down computer (60s countdown)</option>
-          </select>
+        <div class="form-row-2col">
+          <div class="form-field">
+            <label for="queue-connections-limit" class="micro-label">MAX PARALLEL CONNECTIONS</label>
+            <input id="queue-connections-limit" class="mono-input" type="number" min="1" max="32" value="8" />
+          </div>
+          <div class="form-field">
+            <label for="queue-on-finish" class="micro-label">WHEN QUEUE FINISHES</label>
+            <select id="queue-on-finish" class="mono-select">
+              <option value="none">Do nothing</option>
+              <option value="sleep">Put computer to sleep</option>
+              <option value="shutdown">Shut down computer (60s countdown)</option>
+            </select>
+          </div>
         </div>
 
         <footer class="modal-footer">

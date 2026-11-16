@@ -78,6 +78,7 @@ impl Downloader {
             active_connections: 0,
             segments: Vec::new(),
             is_complete: false,
+            ..Default::default()
         };
 
         let (progress_tx, progress_rx) = watch::channel(initial_progress);
@@ -198,6 +199,7 @@ impl Downloader {
                 active_connections: active_count,
                 segments: segments.clone(),
                 is_complete,
+                ..Default::default()
             };
 
             let _ = progress_tx.send(progress);
@@ -291,6 +293,7 @@ impl Downloader {
                         is_completed: false,
                     }],
                     is_complete: false,
+                    ..Default::default()
                 });
             }
         }
@@ -310,6 +313,7 @@ impl Downloader {
                 is_completed: true,
             }],
             is_complete: true,
+            ..Default::default()
         });
 
         Ok(())

@@ -196,37 +196,78 @@ export function inferNameFromUrl(url = "") {
 }
 
 export function normalizeTask(raw = {}, progressOverride = null) {
-  const merged = progressOverride ? { ...raw, ...progressOverride } : raw;
-  const status = normalizeStatus(merged.status ?? merged.state);
-  const url = merged.url ?? merged.uri ?? "";
-  const name = merged.name ?? merged.filename ?? merged.file_name ?? inferNameFromUrl(url);
-  const size = typeof merged.size === "number" ? merged.size : (typeof merged.total_size === "number" ? merged.total_size : (typeof merged.total_bytes === "number" ? merged.total_bytes : null));
-  let downloaded = typeof merged.downloaded === "number"
-    ? merged.downloaded
-    : (typeof merged.downloaded_bytes === "number" ? merged.downloaded_bytes : 0);
+  const p = progressOverride || {};
+  let status = normalizeStatus(p.status ?? p.state ?? raw.status ?? raw.state);
+  if (p.is_complete || raw.is_complete) {
+    status = "finished";
+  }
+
+  const url = raw.url ?? raw.uri ?? p.url ?? "";
+  const name = raw.name ?? raw.filename ?? raw.file_name ?? p.name ?? inferNameFromUrl(url);
+
+  // Total size resolution: prefer progressOverride, then raw
+  let size = null;
+  if (typeof p.total_bytes === "number" && p.total_bytes > 0) size = p.total_bytes;
+  else if (typeof p.total_size === "number" && p.total_size > 0) size = p.total_size;
+  else if (typeof p.size === "number" && p.size > 0) size = p.size;
+  else if (typeof raw.total_size === "number" && raw.total_size > 0) size = raw.total_size;
+  else if (typeof raw.total_bytes === "number" && raw.total_bytes > 0) size = raw.total_bytes;
+  else if (typeof raw.size === "number" && raw.size > 0) size = raw.size;
+
+  // Downloaded bytes resolution: prefer progressOverride, then raw
+  let downloaded = 0;
+  if (typeof p.downloaded_bytes === "number") downloaded = p.downloaded_bytes;
+  else if (typeof p.downloaded === "number") downloaded = p.downloaded;
+  else if (typeof raw.downloaded_bytes === "number") downloaded = raw.downloaded_bytes;
+  else if (typeof raw.downloaded === "number") downloaded = raw.downloaded;
+
   if (status === "finished" && size != null) {
     downloaded = size;
   }
-  const speed = status === "downloading"
-    ? (typeof merged.speed === "number" ? merged.speed : (typeof merged.bytes_per_sec === "number" ? merged.bytes_per_sec : 0))
-    : 0;
 
-  let eta = typeof merged.eta === "number" ? merged.eta : null;
+  // Speed resolution: prefer progressOverride, then raw
+  let speed = 0;
+  if (status === "downloading") {
+    if (typeof p.speed_bytes_per_sec === "number") speed = p.speed_bytes_per_sec;
+    else if (typeof p.speed === "number") speed = p.speed;
+    else if (typeof p.bytes_per_sec === "number") speed = p.bytes_per_sec;
+    else if (typeof raw.speed_bytes_per_sec === "number") speed = raw.speed_bytes_per_sec;
+    else if (typeof raw.speed === "number") speed = raw.speed;
+    else if (typeof raw.bytes_per_sec === "number") speed = raw.bytes_per_sec;
+  }
+
+  let eta = typeof p.eta === "number" ? p.eta : (typeof raw.eta === "number" ? raw.eta : null);
   if (eta == null && status === "downloading" && speed > 0 && size != null && size > downloaded) {
     eta = Math.ceil((size - downloaded) / speed);
   }
 
-  const rawSegments = Array.isArray(merged.segments) ? merged.segments : [];
-  const segments = rawSegments.map((seg) => ({
-    start: Number(seg.start ?? seg.start_byte ?? 0),
-    end: Number(seg.end ?? seg.end_byte ?? 0),
-    downloaded: Number(seg.downloaded ?? seg.downloaded_bytes ?? 0),
-    active: Boolean(seg.active ?? (seg.speed > 0)),
-    speed: Number(seg.speed ?? 0)
-  }));
+  const rawSegments = Array.isArray(p.segments) && p.segments.length > 0
+    ? p.segments
+    : (Array.isArray(raw.segments) ? raw.segments : []);
+
+  const segments = rawSegments.map((seg) => {
+    const start = Number(seg.start ?? seg.start_byte ?? 0);
+    const end = Number(seg.end ?? seg.end_byte ?? 0);
+    let segDownloaded = 0;
+    if (typeof seg.downloaded_bytes === "number") {
+      segDownloaded = seg.downloaded_bytes;
+    } else if (typeof seg.downloaded === "number") {
+      segDownloaded = seg.downloaded;
+    } else if (typeof seg.current === "number") {
+      segDownloaded = Math.max(0, seg.current - start);
+    }
+    const isAct = Boolean(seg.is_active ?? seg.active ?? (seg.speed > 0));
+    return {
+      start,
+      end,
+      downloaded: segDownloaded,
+      active: isAct,
+      speed: Number(seg.speed ?? 0)
+    };
+  });
 
   return {
-    id: String(merged.id ?? merged.task_id ?? ""),
+    id: String(raw.id ?? raw.task_id ?? p.id ?? ""),
     name,
     url,
     status,
@@ -234,13 +275,24 @@ export function normalizeTask(raw = {}, progressOverride = null) {
     downloaded,
     speed,
     eta,
-    category: merged.category || inferCategory(name),
-    queue: merged.queue || merged.queue_id || "Main Queue",
-    destination: merged.destination || null,
-    error: merged.error ?? merged.error_message ?? null,
-    completedAt: merged.completedAt ?? merged.completed_at ?? null,
-    avgSpeed: merged.avgSpeed ?? merged.avg_speed ?? null,
-    segments
+    category: raw.category || inferCategory(name),
+    queue: (raw.queue === "main" || raw.queue_id === "main") ? "Main Queue" : ((raw.queue === "night" || raw.queue_id === "night") ? "Night Queue" : (raw.queue || raw.queue_id || "Main Queue")),
+    destination: raw.destination || null,
+    error: p.error ?? p.error_message ?? raw.error ?? raw.error_message ?? null,
+    completedAt: raw.completedAt ?? raw.completed_at ?? p.completedAt ?? null,
+    avgSpeed: raw.avgSpeed ?? raw.avg_speed ?? p.avgSpeed ?? null,
+    segments,
+    uploadSpeed: p.upload_speed_bytes_per_sec ?? raw.uploadSpeed ?? 0,
+    uploadedBytes: p.uploaded_bytes ?? raw.uploadedBytes ?? 0,
+    numSeeders: p.num_seeders ?? raw.numSeeders ?? 0,
+    numPeers: p.num_peers ?? p.active_connections ?? raw.numPeers ?? 0,
+    isSeeding: Boolean(p.is_seeding ?? raw.isSeeding),
+    infoHash: p.info_hash ?? raw.infoHash ?? null,
+    pieceLength: p.piece_length ?? raw.pieceLength ?? null,
+    numPieces: p.num_pieces ?? raw.numPieces ?? null,
+    torrentName: p.torrent_name ?? raw.torrentName ?? null,
+    torrentComment: p.torrent_comment ?? raw.torrentComment ?? null,
+    torrentCreationDate: p.torrent_creation_date ?? raw.torrentCreationDate ?? null
   };
 }
 
@@ -331,7 +383,7 @@ export async function getAllProgress() {
 }
 
 export async function addTask(payload) {
-  const { url, name, category, queue, folder, startNow = true } = payload;
+  const { url, name, category, queue, folder, startNow = true, selectFiles, seedRatio, referrer, cookies, userAgent, headers } = payload;
   const cleanName = (name || "").split(/[/\\]/).pop() || "";
   const cleanFolder = (folder || "").trim();
   const destination = cleanFolder
@@ -343,11 +395,23 @@ export async function addTask(payload) {
       url,
       filename: cleanName || undefined,
       start_now: startNow,
+      startNow: startNow,
       destination,
-      queue_id: queue || undefined
+      queue_id: queue || undefined,
+      queueId: queue || undefined,
+      select_files: selectFiles || undefined,
+      selectFiles: selectFiles || undefined,
+      seed_ratio: typeof seedRatio === "number" ? seedRatio : undefined,
+      seedRatio: typeof seedRatio === "number" ? seedRatio : undefined,
+      referrer: referrer || undefined,
+      cookies: cookies || undefined,
+      user_agent: userAgent || undefined,
+      userAgent: userAgent || undefined,
+      headers: headers || undefined
     });
     return normalizeTask(res || { id: `task-${Date.now()}`, url, name: cleanName, category, queue, status: startNow ? "downloading" : "queued" });
   }
+
   const resolvedName = cleanName || inferNameFromUrl(url);
   const totalBytes = 536870912;
   const quarter = totalBytes / 4;
@@ -377,7 +441,11 @@ export async function addTask(payload) {
 
 export async function pauseTask(id) {
   if (hasTauri()) {
-    await window.__TAURI__.core.invoke("pause_task", { id });
+    try {
+      await window.__TAURI__.core.invoke("pause_task", { id });
+    } catch (e) {
+      console.warn("pause_task error:", e);
+    }
     return;
   }
   const found = SAMPLE_TASKS.find((t) => t.id === id);
@@ -390,7 +458,11 @@ export async function pauseTask(id) {
 
 export async function resumeTask(id) {
   if (hasTauri()) {
-    await window.__TAURI__.core.invoke("resume_task", { id });
+    try {
+      await window.__TAURI__.core.invoke("resume_task", { id });
+    } catch (e) {
+      console.warn("resume_task error:", e);
+    }
     return;
   }
   const found = SAMPLE_TASKS.find((t) => t.id === id);
@@ -417,8 +489,11 @@ export async function resumeTask(id) {
 
 export async function deleteTask(id, deleteFile = false) {
   if (hasTauri()) {
-    await window.__TAURI__.core.invoke("delete_task", { id, deleteFile });
-    return;
+    try {
+      await window.__TAURI__.core.invoke("delete_task", { id, delete_file: deleteFile, deleteFile });
+    } catch (e) {
+      console.warn("delete_task error:", e);
+    }
   }
   const idx = SAMPLE_TASKS.findIndex((t) => t.id === id);
   if (idx !== -1) SAMPLE_TASKS.splice(idx, 1);
@@ -621,4 +696,69 @@ export async function getPendingIntercepts() {
     }
   }
   return [];
+}
+export async function moveTaskToQueue(taskId, queueId) {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("move_task_to_queue", {
+        taskId: String(taskId),
+        queueId: String(queueId)
+      });
+    } catch (e) {
+      console.warn("move_task_to_queue error:", e);
+    }
+  }
+  return false;
+}
+
+export async function getAllDrives() {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("get_all_drives");
+    } catch (e) {
+      console.warn("get_all_drives error:", e);
+    }
+  }
+  return [
+    { letter: "C:\\", label: "Local Disk (C:)", total_bytes: 119047157760, free_bytes: 20080939008, drive_type: "fixed" },
+    { letter: "D:\\", label: "Local Disk (D:)", total_bytes: 256051916800, free_bytes: 97731022848, drive_type: "fixed" }
+  ];
+}
+
+export async function selectTorrentFile() {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("select_torrent_file");
+    } catch (e) {
+      console.warn("select_torrent_file error:", e);
+    }
+  }
+  return null;
+}
+
+export async function inspectTorrentFile(path) {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("inspect_torrent_file", { path });
+    } catch (e) {
+      console.warn("inspect_torrent_file error:", e);
+    }
+  }
+  return null;
+}
+
+export async function reorderQueueTasks(queueId, taskIds) {
+  if (hasTauri()) {
+    try {
+      return await window.__TAURI__.core.invoke("reorder_queue_tasks", {
+        queue_id: queueId,
+        queueId: queueId,
+        task_ids: taskIds,
+        taskIds: taskIds
+      });
+    } catch (e) {
+      console.warn("reorder_queue_tasks error:", e);
+    }
+  }
+  return true;
 }

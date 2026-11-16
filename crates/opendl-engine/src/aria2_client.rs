@@ -39,6 +39,30 @@ impl std::fmt::Display for JsonRpcError {
     }
 }
 
+pub fn base64_encode(data: &[u8]) -> String {
+    const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        result.push(CHARSET[((triple >> 18) & 0x3F) as usize] as char);
+        result.push(CHARSET[((triple >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(CHARSET[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+        if chunk.len() > 2 {
+            result.push(CHARSET[(triple & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+    result
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Aria2Uri {
@@ -46,45 +70,95 @@ pub struct Aria2Uri {
     pub status: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Aria2File {
-    pub index: String,
-    pub path: String,
-    pub length: String,
-    pub completed_length: String,
-    pub selected: String,
+    pub index: Option<String>,
+    pub path: Option<String>,
+    pub length: Option<String>,
+    pub completed_length: Option<String>,
+    pub selected: Option<String>,
     pub uris: Option<Vec<Aria2Uri>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Aria2BittorrentInfo {
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Aria2Bittorrent {
+    pub announce_list: Option<Vec<Vec<String>>>,
+    pub comment: Option<String>,
+    pub creation_date: Option<i64>,
+    pub mode: Option<String>,
+    pub info: Option<Aria2BittorrentInfo>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Aria2Status {
     pub gid: String,
     pub status: String, // "active", "waiting", "paused", "error", "complete", "removed"
-    pub total_length: String,
-    pub completed_length: String,
-    pub download_speed: String,
+    pub total_length: Option<String>,
+    pub completed_length: Option<String>,
+    pub upload_length: Option<String>,
+    pub download_speed: Option<String>,
     pub upload_speed: Option<String>,
     pub piece_length: Option<String>,
     pub num_pieces: Option<String>,
+    pub num_seeders: Option<String>,
+    pub seeder: Option<String>,
     pub connections: Option<String>,
+    pub info_hash: Option<String>,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
     pub dir: Option<String>,
     pub files: Option<Vec<Aria2File>>,
     pub bitfield: Option<String>,
+    pub followed_by: Option<Vec<String>>,
+    pub following: Option<String>,
+    pub bittorrent: Option<Aria2Bittorrent>,
 }
 
 impl Aria2Status {
     /// Convert aria2 telemetry into OpenDL's DownloadProgress structure
     pub fn to_download_progress(&self) -> DownloadProgress {
-        let total: u64 = self.total_length.parse().unwrap_or(0);
-        let completed: u64 = self.completed_length.parse().unwrap_or(0);
-        let speed: f64 = self.download_speed.parse().unwrap_or(0.0);
-        let conns: usize = self.connections.as_deref().unwrap_or("0").parse().unwrap_or(0);
+        let total: u64 = self.total_length.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let mut completed: u64 = self.completed_length.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0);
+        if let Some(ref files) = self.files {
+            if let Some(first) = files.first() {
+                if let Some(ref cl_str) = first.completed_length {
+                    if let Ok(file_cl) = cl_str.parse::<u64>() {
+                        if file_cl > completed {
+                            completed = file_cl;
+                        }
+                    }
+                }
+            }
+        }
+        let speed: f64 = self.download_speed.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+        let upload_speed: f64 = self.upload_speed.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+        let uploaded_bytes: u64 = self.upload_length.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let num_seeders: usize = self.num_seeders.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let conns: usize = self.connections.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0);
         let is_complete = self.status == "complete";
         let is_downloading = self.status == "active";
+        let is_seeding = self.seeder.as_deref() == Some("true") || (completed >= total && total > 0 && self.status == "active");
+
+        let piece_len: Option<u64> = self.piece_length.as_deref().and_then(|s| s.parse().ok());
+        let pieces: Option<u64> = self.num_pieces.as_deref().and_then(|s| s.parse().ok());
+        let info_hash = self.info_hash.clone();
+        let (torrent_name, torrent_comment, torrent_creation_date) = match self.bittorrent {
+            Some(ref bt) => (
+                bt.info.as_ref().and_then(|i| i.name.clone()),
+                bt.comment.clone(),
+                bt.creation_date,
+            ),
+            None => (None, None, None),
+        };
 
         let total_bytes = if total > 0 { Some(total) } else { None };
 
@@ -97,6 +171,17 @@ impl Aria2Status {
             active_connections: conns,
             segments,
             is_complete,
+            upload_speed_bytes_per_sec: upload_speed,
+            uploaded_bytes,
+            num_seeders,
+            num_peers: conns,
+            is_seeding,
+            info_hash,
+            piece_length: piece_len,
+            num_pieces: pieces,
+            torrent_name,
+            torrent_comment,
+            torrent_creation_date,
         }
     }
 
@@ -322,6 +407,27 @@ impl Aria2Client {
 
         let params = json!([self.secret_param, urls, opts]);
         self.call_rpc::<String>("aria2.addUri", params).await
+    }
+
+    /// Add a BitTorrent download from raw .torrent file bytes
+    pub async fn add_torrent(
+        &self,
+        torrent_bytes: &[u8],
+        dir: Option<&Path>,
+        options: Option<HashMap<String, String>>,
+    ) -> Result<String> {
+        let b64 = base64_encode(torrent_bytes);
+        let mut opts = serde_json::Map::new();
+        if let Some(d) = dir {
+            opts.insert("dir".to_string(), json!(d.to_string_lossy().to_string()));
+        }
+        if let Some(custom_opts) = options {
+            for (k, v) in custom_opts {
+                opts.insert(k, json!(v));
+            }
+        }
+        let params = json!([self.secret_param, b64, [], opts]);
+        self.call_rpc::<String>("aria2.addTorrent", params).await
     }
 
     /// Query full status of a download task by GID

@@ -405,7 +405,7 @@ export function renderDock() {
     dockEl.style.height = `${store.dockHeight}px`;
   }
 
-  const tabs = ["segments", "throughput", "wire"];
+  const tabs = ["segments", "throughput", "wire", "torrent"];
   for (const t of tabs) {
     const btn = document.getElementById(`tab-btn-${t}`);
     const panel = document.getElementById(`tab-panel-${t}`);
@@ -469,7 +469,124 @@ export function renderDock() {
     drawTaskSparkline(task);
   } else if (store.dockTab === "wire") {
     renderWireInspector(task);
+  } else if (store.dockTab === "torrent") {
+    renderTorrentInspector(task);
   }
+}
+
+function renderTorrentInspector(task) {
+  const tsTimeActive = document.getElementById("ts-time-active");
+  const tsDownloaded = document.getElementById("ts-downloaded");
+  const tsDownSpeed = document.getElementById("ts-down-speed");
+  const tsDownLimit = document.getElementById("ts-down-limit");
+  const tsShareRatio = document.getElementById("ts-share-ratio");
+  const tsPopularity = document.getElementById("ts-popularity");
+
+  const tsEta = document.getElementById("ts-eta");
+  const tsUploaded = document.getElementById("ts-uploaded");
+  const tsUpSpeed = document.getElementById("ts-up-speed");
+  const tsUpLimit = document.getElementById("ts-up-limit");
+  const tsReannounce = document.getElementById("ts-reannounce");
+  const tsSeedingState = document.getElementById("ts-seeding-state");
+
+  const tsConnections = document.getElementById("ts-connections");
+  const tsSeeds = document.getElementById("ts-seeds");
+  const tsPeers = document.getElementById("ts-peers");
+  const tsWasted = document.getElementById("ts-wasted");
+  const tsLastSeen = document.getElementById("ts-last-seen");
+
+  const tiTotalSize = document.getElementById("ti-total-size");
+  const tiAddedOn = document.getElementById("ti-added-on");
+  const tiPrivate = document.getElementById("ti-private");
+  const tiInfoHash = document.getElementById("ti-infohash");
+  const tiInfoHashV2 = document.getElementById("ti-infohash-v2");
+  const tiSavePath = document.getElementById("ti-save-path");
+  const tiComment = document.getElementById("ti-comment");
+
+  const tiPieces = document.getElementById("ti-pieces");
+  const tiCompletedOn = document.getElementById("ti-completed-on");
+  const tiCreatedBy = document.getElementById("ti-created-by");
+  const tiCreatedOn = document.getElementById("ti-created-on");
+
+  if (!task) {
+    if (tsTimeActive) tsTimeActive.textContent = "--";
+    if (tsDownloaded) tsDownloaded.textContent = "--";
+    if (tsDownSpeed) tsDownSpeed.textContent = "0 B/s";
+    if (tsShareRatio) tsShareRatio.textContent = "--";
+    if (tsEta) tsEta.textContent = "--";
+    if (tsUploaded) tsUploaded.textContent = "--";
+    if (tsUpSpeed) tsUpSpeed.textContent = "0 B/s";
+    if (tsConnections) tsConnections.textContent = "0 (60 max)";
+    if (tsSeeds) tsSeeds.textContent = "0 (0 total)";
+    if (tsPeers) tsPeers.textContent = "0 (0 total)";
+    if (tiTotalSize) tiTotalSize.textContent = "--";
+    if (tiInfoHash) tiInfoHash.textContent = "--";
+    if (tiSavePath) tiSavePath.textContent = "--";
+    if (tiComment) tiComment.textContent = "--";
+    if (tiPieces) tiPieces.textContent = "--";
+    return;
+  }
+
+  let activeTimeStr = "--";
+  if (task.createdAt) {
+    const elapsedSec = Math.max(0, Math.floor(Date.now() / 1000 - task.createdAt));
+    const h = Math.floor(elapsedSec / 3600);
+    const m = Math.floor((elapsedSec % 3600) / 60);
+    const s = elapsedSec % 60;
+    activeTimeStr = h > 0 ? `${h}h ${m}m` : (m > 0 ? `${m}m ${s}s` : `${s}s`);
+  }
+
+  const downSp = formatSpeedParts(task.speed);
+  const upSp = formatSpeedParts(task.uploadSpeed || 0);
+  const avgSp = formatSpeedParts(task.avgSpeed || task.speed || 0);
+
+  const downloadedBytes = task.downloaded || 0;
+  const uploadedBytes = task.uploadedBytes || 0;
+  const ratio = downloadedBytes > 0 ? (uploadedBytes / downloadedBytes).toFixed(2) : "0.00";
+
+  if (tsTimeActive) tsTimeActive.textContent = activeTimeStr;
+  if (tsDownloaded) tsDownloaded.textContent = `${formatBytes(downloadedBytes)} (${formatBytes(downloadedBytes)} this session)`;
+  if (tsDownSpeed) tsDownSpeed.textContent = `${downSp.value} ${downSp.unit} (${avgSp.value} ${avgSp.unit} avg.)`;
+  if (tsDownLimit) tsDownLimit.textContent = "∞";
+  if (tsShareRatio) tsShareRatio.textContent = ratio;
+  if (tsPopularity) {
+    const totalPeers = (task.numSeeders || 0) + (task.numPeers || 0);
+    tsPopularity.textContent = totalPeers > 0 ? `${task.numSeeders || 0} / ${totalPeers}` : "--";
+  }
+
+  if (tsEta) tsEta.textContent = task.status === "finished" ? "Done" : (task.speed > 0 && task.eta ? formatEta(task.eta) : "∞");
+  if (tsUploaded) tsUploaded.textContent = `${formatBytes(uploadedBytes)} (${formatBytes(uploadedBytes)} this session)`;
+  if (tsUpSpeed) tsUpSpeed.textContent = `${upSp.value} ${upSp.unit}`;
+  if (tsUpLimit) tsUpLimit.textContent = "∞";
+  if (tsReannounce) tsReannounce.textContent = "0s";
+  if (tsSeedingState) tsSeedingState.textContent = task.isSeeding ? "Seeding" : (task.status === "finished" ? "Completed" : task.status.toUpperCase());
+
+  if (tsConnections) tsConnections.textContent = `${task.numPeers || 0} (60 max)`;
+  if (tsSeeds) tsSeeds.textContent = `${task.numSeeders || 0} (${task.numSeeders || 0} total)`;
+  if (tsPeers) tsPeers.textContent = `${task.numPeers || 0} (${task.numPeers || 0} total)`;
+  if (tsWasted) tsWasted.textContent = "0 B";
+  if (tsLastSeen) tsLastSeen.textContent = task.completedAt ? new Date(task.completedAt).toLocaleString() : "--";
+
+  if (tiTotalSize) tiTotalSize.textContent = task.size ? formatBytes(task.size) : "--";
+  if (tiAddedOn) tiAddedOn.textContent = task.createdAt ? new Date(task.createdAt * 1000).toLocaleString() : "--";
+  if (tiPrivate) tiPrivate.textContent = "No";
+  if (tiInfoHash) tiInfoHash.textContent = task.infoHash || "--";
+  if (tiInfoHashV2) tiInfoHashV2.textContent = "N/A";
+  if (tiSavePath) tiSavePath.textContent = task.destination || "C:\\Users\\Administrator\\Downloads";
+  if (tiComment) tiComment.textContent = task.torrentComment || task.name || "--";
+
+  if (tiPieces) {
+    if (task.numPieces && task.pieceLength) {
+      const havePieces = task.size ? Math.min(task.numPieces, Math.floor((downloadedBytes / task.size) * task.numPieces)) : 0;
+      tiPieces.textContent = `${task.numPieces} x ${formatBytes(task.pieceLength)} (have ${havePieces})`;
+    } else {
+      tiPieces.textContent = "--";
+    }
+  }
+
+  if (tiCompletedOn) tiCompletedOn.textContent = task.completedAt ? new Date(task.completedAt).toLocaleString() : "--";
+  if (tiCreatedBy) tiCreatedBy.textContent = "OpenDL Engine";
+  if (tiCreatedOn) tiCreatedOn.textContent = task.torrentCreationDate ? new Date(task.torrentCreationDate * 1000).toLocaleString() : "--";
 }
 
 export function initDockInteractions() {
@@ -483,7 +600,8 @@ export function initDockInteractions() {
   const tabTitles = {
     segments: "CONNECTIONS",
     throughput: "DOWNLOAD SPEED",
-    wire: "CONNECTION LOGS"
+    wire: "CONNECTION LOGS",
+    torrent: "TORRENT STATS"
   };
 
   document.querySelectorAll(".dock-tab").forEach((btn) => {

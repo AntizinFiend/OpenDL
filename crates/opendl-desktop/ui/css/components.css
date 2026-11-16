@@ -25,6 +25,17 @@
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
+  -webkit-app-region: drag;
+}
+
+.titlebar button,
+.titlebar input,
+.titlebar select,
+.titlebar a,
+.titlebar .window-controls,
+.titlebar .titlebar-search-wrap,
+.titlebar .titlebar-actions {
+  -webkit-app-region: no-drag;
 }
 
 .titlebar-brand {
@@ -343,7 +354,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+.toolbar-left .btn {
+  height: 32px;
+  padding: 0 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn {
@@ -502,25 +520,10 @@
   flex-shrink: 0;
 }
 
-/* COLUMN TEMPLATES PER VIEW */
-.task-table[data-view-cols="all"] .table-header,
-.task-table[data-view-cols="all"] .task-row {
-  grid-template-columns: 44px minmax(180px, 1fr) 92px 280px 96px 88px 100px;
-}
-
-.task-table[data-view-cols="downloading"] .table-header,
-.task-table[data-view-cols="downloading"] .task-row {
-  grid-template-columns: 44px minmax(200px, 1fr) 340px 104px 96px;
-}
-
-.task-table[data-view-cols="completed"] .table-header,
-.task-table[data-view-cols="completed"] .task-row {
-  grid-template-columns: 44px minmax(220px, 1fr) 96px 156px 108px;
-}
-
-.task-table[data-view-cols="queued"] .table-header,
-.task-table[data-view-cols="queued"] .task-row {
-  grid-template-columns: 44px minmax(220px, 1fr) 96px 140px 84px;
+/* UNIFIED COLUMN TEMPLATES ACROSS VIEWS */
+.task-table .table-header,
+.task-table .task-row {
+  grid-template-columns: var(--grid-cols-all, 44px minmax(180px, 1.2fr) 92px minmax(220px, 1.4fr) 96px 90px 100px);
 }
 
 .th-cell {
@@ -578,8 +581,10 @@
 }
 
 .group-header-row {
-  position: sticky;
+  position: absolute;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 2;
   height: 26px;
   display: flex;
@@ -592,6 +597,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
+  box-sizing: border-box;
 }
 
 .task-row {
@@ -602,8 +608,30 @@
   gap: var(--space-3);
   border-bottom: 1px solid var(--border);
   border-left: 2px solid transparent;
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  cursor: default;
   transition: background-color var(--dur-fast) var(--ease-out), opacity var(--dur-med) var(--ease-out);
+}
+
+.task-row[draggable="true"] {
+  cursor: grab;
+}
+
+.task-row.is-dragging {
+  opacity: 0.35;
+  background: var(--track);
+}
+
+.task-row.is-drag-over-top {
+  border-top: 2px solid var(--accent-text) !important;
+}
+
+.task-row.is-drag-over-bottom {
+  border-bottom: 2px solid var(--accent-text) !important;
 }
 
 .task-row:hover {
@@ -735,6 +763,9 @@
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
 }
 
 .progress-pct {
@@ -1273,9 +1304,10 @@
 .context-menu {
   position: fixed;
   z-index: 200;
-  min-width: 220px;
+  min-width: 260px;
   background: var(--surface);
   border: 1px solid var(--accent-text);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   list-style: none;
   padding: 4px 0;
 }
@@ -1284,9 +1316,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px var(--space-3);
+  gap: var(--space-4);
+  padding: 7px 14px;
   font-size: var(--fs-ui);
   cursor: pointer;
+  white-space: nowrap;
+}
+
+.context-menu-item .micro-label {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0.75;
+  font-size: 10px;
 }
 
 .context-menu-item:hover {
@@ -1431,3 +1472,353 @@
 .shutdown-banner.is-hidden {
   display: none !important;
 }
+/* TABLE COLUMN RESIZING */
+.th-cell {
+  position: relative;
+  overflow: visible;
+}
+
+.col-resizer {
+  position: absolute;
+  right: -5px;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+.col-resizer:hover,
+.col-resizer.is-active {
+  background: var(--accent-text);
+  opacity: 0.6;
+  width: 2px;
+  right: 0;
+}
+
+/* COMPREHENSIVE SETTINGS MODAL */
+#dialog-settings {
+  width: 740px;
+  max-width: 95vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#dialog-settings .modal-body {
+  padding: 0;
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.settings-layout {
+  display: flex;
+  flex: 1;
+  min-height: 420px;
+  overflow: hidden;
+}
+
+.settings-nav {
+  width: 190px;
+  background: var(--track);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2) 0;
+  flex-shrink: 0;
+}
+
+.settings-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--fs-ui);
+  text-align: left;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+
+.settings-nav-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.settings-nav-btn.is-active {
+  background: var(--surface);
+  color: var(--accent-text);
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+
+.settings-content {
+  flex: 1;
+  padding: var(--space-4) var(--space-5);
+  overflow-y: auto;
+}
+
+.settings-section-title {
+  font-family: var(--font-mono);
+  font-size: var(--fs-ui);
+  color: var(--accent-text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 4px 0;
+}
+
+.settings-desc {
+  font-size: var(--fs-micro);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-4);
+}
+
+.drive-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.drive-item-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px 14px;
+  background: var(--track);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.drive-item-card:hover {
+  border-color: var(--accent-text);
+}
+
+.drive-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.drive-item-name {
+  font-size: var(--fs-ui);
+  color: var(--text);
+}
+
+.drive-item-label {
+  color: var(--text-secondary);
+  font-size: var(--fs-micro);
+  margin-left: 4px;
+}
+
+.drive-item-meta {
+  color: var(--text-secondary);
+  font-size: var(--fs-micro);
+}
+
+/* TORRENT DOCK TAB (qBittorrent style) */
+.torrent-dock-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-y: auto;
+  max-height: 100%;
+  padding-right: 4px;
+}
+
+.torrent-section {
+  background: var(--track);
+  border: 1px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+}
+
+.torrent-section-title {
+  color: var(--accent-text);
+  font-weight: 700;
+  margin-bottom: 6px;
+  display: block;
+  letter-spacing: 0.08em;
+}
+
+.torrent-grid-3col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2) var(--space-4);
+}
+
+.torrent-field-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* TORRENT FILE SELECTION PANEL IN ADD DIALOG */
+.torrent-selection-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.torrent-sel-divider {
+  height: 1px;
+  background: var(--border);
+  margin: var(--space-2) 0;
+}
+
+.torrent-sel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.torrent-sel-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.torrent-badge {
+  background: var(--accent-faint);
+  color: var(--accent-text);
+  border: 1px solid var(--accent-border);
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.torrent-sel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.torrent-file-list-wrap {
+  border: 1px solid var(--border);
+  background: var(--track);
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+}
+
+.torrent-file-list-header {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.torrent-file-items {
+  overflow-y: auto;
+  max-height: 196px;
+  display: flex;
+  flex-direction: column;
+}
+
+.torrent-file-row {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+}
+
+.torrent-file-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.torrent-file-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  margin-right: 14px;
+  cursor: pointer;
+}
+
+.torrent-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.torrent-file-size {
+  width: 90px;
+  text-align: right;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.torrent-file-priority {
+  width: 70px;
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+.torrent-options-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.torrent-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.torrent-seed-ratio-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* SIDEBAR QUEUE ACTIONS */
+.nav-item-queue-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.nav-item-queue-row .nav-item {
+  flex: 1;
+}
+
+.btn-queue-edit {
+  opacity: 0.5;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 4px 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity var(--dur-fast), color var(--dur-fast);
+}
+
+.btn-queue-edit:hover {
+  opacity: 1;
+  color: var(--accent-text);
+}
+

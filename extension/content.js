@@ -1,51 +1,38 @@
-// OpenDL In-Page Download Link Interceptor
-const DOWNLOAD_EXTENSIONS = new Set([
-  "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "bin", "dmg", "pkg",
-  "exe", "msi", "apk", "deb", "rpm",
-  "mp4", "mkv", "avi", "mov", "webm", "flv", "wmv",
-  "mp3", "wav", "flac", "aac", "ogg", "m4a",
-  "pdf", "epub", "torrent"
-]);
-
-document.addEventListener("click", (e) => {
+// OpenDL In-Page Link & Magnet Interceptor
+function interceptLinkClick(e) {
   const link = e.target.closest("a");
   if (!link || !link.href) return;
 
-  const urlStr = link.href;
-  if (!urlStr.startsWith("http://") && !urlStr.startsWith("https://")) return;
+  const urlStr = link.href.trim();
 
-  let isDownload = false;
-  let filename = link.getAttribute("download") || "";
-
-  if (link.hasAttribute("download")) {
-    isDownload = true;
-  } else {
-    try {
-      const parsed = new URL(urlStr);
-      const pathname = parsed.pathname;
-      const lastDot = pathname.lastIndexOf(".");
-      if (lastDot !== -1) {
-        const ext = pathname.substring(lastDot + 1).toLowerCase();
-        if (DOWNLOAD_EXTENSIONS.has(ext)) {
-          isDownload = true;
-          const slash = pathname.lastIndexOf("/");
-          if (slash !== -1) {
-            filename = decodeURIComponent(pathname.substring(slash + 1));
-          }
-        }
-      }
-    } catch (_) {}
-  }
-
-  if (isDownload) {
+  // Intercept magnet: URIs directly (Chromium downloads API does not handle magnet: schemes)
+  if (urlStr.startsWith("magnet:")) {
     e.preventDefault();
     e.stopPropagation();
 
+    let suggestedFilename = "Magnet Download";
+    try {
+      const match = urlStr.match(/dn=([^&]+)/i);
+      if (match && match[1]) {
+        suggestedFilename = decodeURIComponent(match[1].replace(/\+/g, " "));
+      }
+    } catch (_) {}
+
     chrome.runtime.sendMessage({
-      type: "PAGE_LINK_CLICKED",
+      type: "MAGNET_LINK_CLICKED",
       url: urlStr,
-      suggestedFilename: filename,
+      suggestedFilename: suggestedFilename,
       referrer: window.location.href
     });
+    return;
   }
-}, true);
+
+  // NOTE: We deliberately do NOT preventDefault on standard HTTP/HTTPS download links.
+  // Websites like Mediafire, Mega, Google Drive, Rapidgator, etc. require their in-page
+  // event listeners and scripts to execute (to establish session tokens, cookies, and Cloudflare challenges).
+  // Chromium's chrome.downloads.onDeterminingFilename in background.js will cleanly intercept
+  // the fully-negotiated download stream with 100% of the session cookies, tokens, and headers!
+}
+
+document.addEventListener("click", interceptLinkClick, true);
+document.addEventListener("auxclick", interceptLinkClick, true);
